@@ -13,6 +13,45 @@ async function ensureNotesDirExists() {
     await fs.mkdir(notesDir);
   }
 }
+async function scanNotesDir(currentPath, baseDir) {
+  const entries = await fs.readdir(currentPath, { withFileTypes: true });
+  const tree = [];
+  for (const entry of entries) {
+    if (entry.name.startsWith(".")) continue;
+    const fullPath = path.join(currentPath, entry.name);
+    const relativePath = path.relative(baseDir, fullPath);
+    if (entry.isDirectory()) {
+      const children = await scanNotesDir(fullPath, baseDir);
+      tree.push({
+        id: relativePath,
+        title: entry.name,
+        type: "folder",
+        path: relativePath,
+        children
+      });
+    } else if (entry.isFile() && entry.name.endsWith(".json")) {
+      try {
+        const fileData = await fs.readFile(fullPath, "utf8");
+        const note = JSON.parse(fileData);
+        tree.push({
+          id: note.id,
+          // Keep the UUID as the canonical ID
+          title: note.title,
+          type: "note",
+          path: relativePath
+          // Relative path for file operations
+        });
+      } catch (err) {
+        console.error(`Error reading note file ${entry.name} at ${relativePath}:`, err);
+      }
+    }
+  }
+  return tree.sort((a, b) => {
+    if (a.type === "folder" && b.type !== "folder") return -1;
+    if (a.type !== "folder" && b.type === "folder") return 1;
+    return a.title.localeCompare(b.title);
+  });
+}
 let mainWindow;
 function createWindow() {
   const preloadScript = app.isPackaged ? path.join(__dirname, "../preload/preload.js") : path.join(__dirname, "preload.js");
@@ -26,7 +65,6 @@ function createWindow() {
       contextIsolation: true,
       enableRemoteModule: false,
       preload: preloadScript
-      // <-- Use the fixed path
     },
     frame: false,
     transparent: true,
@@ -73,81 +111,96 @@ function createWindow() {
   });
   ipcMain.handle("get-notes-list", async () => {
     await ensureNotesDirExists();
-    const noteFiles = await fs.readdir(notesDir);
-    const notesList = [];
-    for (const file of noteFiles) {
-      if (file.endsWith(".json")) {
-        try {
-          const filePath = path.join(notesDir, file);
-          const fileData = await fs.readFile(filePath, "utf8");
-          const note = JSON.parse(fileData);
-          notesList.push({ id: note.id, title: note.title });
-        } catch (err) {
-          console.error(`Error reading note file ${file}:`, err);
-        }
-      }
-    }
-    return notesList;
+    return scanNotesDir(notesDir, notesDir);
   });
-  ipcMain.handle("get-note-content", async (event, noteId) => {
+  ipcMain.handle("get-note-content", async (event, notePath) => {
     await ensureNotesDirExists();
-    const filePath = path.join(notesDir, `${noteId}.json`);
+    const fullPath = path.join(notesDir, notePath);
     try {
-      const fileData = await fs.readFile(filePath, "utf8");
+      const fileData = await fs.readFile(fullPath, "utf8");
       const note = JSON.parse(fileData);
       return note.content;
     } catch (err) {
-      console.error(`Error reading note ${noteId}:`, err);
+      console.error(`Error reading note at ${notePath}:`, err);
       return null;
     }
   });
-  ipcMain.on("save-note-content", async (event, { id, content }) => {
+  ipcMain.on("save-note-content", async (event, { id, path: notePath, content }) => {
     await ensureNotesDirExists();
-    const filePath = path.join(notesDir, `${id}.json`);
+    const fullPath = path.join(notesDir, notePath);
     try {
-      const fileData = await fs.readFile(filePath, "utf8");
+      const fileData = await fs.readFile(fullPath, "utf8");
       const note = JSON.parse(fileData);
       note.content = content;
-      await fs.writeFile(filePath, JSON.stringify(note, null, 2));
+      await fs.writeFile(fullPath, JSON.stringify(note, null, 2));
     } catch (err) {
-      console.error(`Error saving note ${id}:`, err);
+      console.error(`Error saving note at ${notePath}:`, err);
     }
   });
-  ipcMain.on("update-note-title", async (event, { id, newTitle }) => {
+  ipcMain.on("update-note-title", async (event, { id, path: oldPath, newTitle, type }) => {
     await ensureNotesDirExists();
-    const filePath = path.join(notesDir, `${id}.json`);
-    try {
-      const fileData = await fs.readFile(filePath, "utf8");
-      const note = JSON.parse(fileData);
-      note.title = newTitle;
-      await fs.writeFile(filePath, JSON.stringify(note, null, 2));
-    } catch (err) {
-      console.error(`Error updating title for note ${id}:`, err);
+    const oldFullPath = path.join(notesDir, oldPath);
+    newTitle = newTitle.replace(/[^a-zA-Z0-9\s-_.]/g, "").trim() || "Untitled";
+    if (type === "folder") {
+      const newFullPath = path.join(path.dirname(oldFullPath), newTitle);
+      if (oldFullPath === newFullPath) return;
+      try {
+        await fs.rename(oldFullPath, newFullPath);
+      } catch (err) {
+        console.error(`Error renaming folder ${oldPath}:`, err);
+      }
+    } else if (type === "note") {
+      try {
+        const fileData = await fs.readFile(oldFullPath, "utf8");
+        const note = JSON.parse(fileData);
+        note.title = newTitle;
+        await fs.writeFile(oldFullPath, JSON.stringify(note, null, 2));
+      } catch (err) {
+        console.error(`Error updating title for note ${id}:`, err);
+      }
     }
   });
-  ipcMain.handle("create-note", async () => {
+  ipcMain.handle("create-note", async (event, parentPath = ".") => {
     await ensureNotesDirExists();
+    const fullDirPath = path.join(notesDir, parentPath);
     const newNote = {
       id: crypto.randomUUID(),
       title: "New Note",
       content: ""
     };
-    const filePath = path.join(notesDir, `${newNote.id}.json`);
+    const fileName = `${newNote.id}.json`;
+    const filePath = path.join(fullDirPath, fileName);
     try {
+      await fs.mkdir(fullDirPath, { recursive: true });
       await fs.writeFile(filePath, JSON.stringify(newNote, null, 2));
-      return { id: newNote.id, title: newNote.title };
+      const relativePath = path.relative(notesDir, filePath);
+      return { id: newNote.id, title: newNote.title, type: "note", path: relativePath };
     } catch (err) {
       console.error("Error creating new note:", err);
       return null;
     }
   });
-  ipcMain.on("delete-note", async (event, noteId) => {
+  ipcMain.on("delete-note", async (event, itemPath, type) => {
     await ensureNotesDirExists();
-    const filePath = path.join(notesDir, `${noteId}.json`);
+    const fullPath = path.join(notesDir, itemPath);
     try {
-      await fs.unlink(filePath);
+      if (type === "folder") {
+        await fs.rm(fullPath, { recursive: true, force: true });
+      } else {
+        await fs.unlink(fullPath);
+      }
     } catch (err) {
-      console.error(`Error deleting note ${noteId}:`, err);
+      console.error(`Error deleting item at ${itemPath}:`, err);
+    }
+  });
+  ipcMain.on("create-folder", async (event, parentPath, folderName) => {
+    await ensureNotesDirExists();
+    folderName = folderName.replace(/[^a-zA-Z0-9\s-_.]/g, "").trim() || "New Folder";
+    const fullPath = path.join(notesDir, parentPath, folderName);
+    try {
+      await fs.mkdir(fullPath, { recursive: true });
+    } catch (err) {
+      console.error(`Error creating folder ${fullPath}:`, err);
     }
   });
   ipcMain.handle("load-reminders", async () => {
