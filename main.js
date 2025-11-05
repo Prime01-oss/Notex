@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, Notification, session } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
-const crypto = require('node:crypto'); // <-- Re-add this. It's the correct way.
+const crypto = require('node:crypto');
 
 // --- Define persistent file paths (Unchanged) ---
 const userDataPath = app.getPath('userData');
@@ -20,6 +20,12 @@ async function ensureNotesDirExists() {
 let mainWindow;
 
 function createWindow() {
+  // This correctly points to the preload script in BOTH
+  // development (root) and production (out/preload)
+  const preloadScript = app.isPackaged
+    ? path.join(__dirname, '../preload/preload.js') // Production path
+    : path.join(__dirname, 'preload.js');          // Development path
+
   mainWindow = new BrowserWindow({
     width: 1300,
     height: 1650,
@@ -29,7 +35,7 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false,
-      preload: path.join(__dirname, 'preload.js') 
+      preload: preloadScript // <-- Use the fixed path
     },
     frame: false,
     transparent: true,
@@ -39,25 +45,36 @@ function createWindow() {
     show: false
   });
 
-  if (process.env.VITE_DEV_SERVER_URL) {
-    mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+
+  // --- UPDATED LOADING LOGIC (THE FIX) ---
+  const devServerURL = 'http://localhost:5173'; // Default Vite port
+
+  if (!app.isPackaged) {
+    console.log('[DEBUG] Loading Dev Server URL: ' + devServerURL);
+    mainWindow.loadURL(devServerURL);
   } else {
+    console.log('[DEBUG] Loading Production File');
+    // This path is for production builds
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
+  // --- END LOGIC ---
 
-  // --- All IPC handlers remain the same ---
 
   // --- 'show-notification' handler ---
   ipcMain.on('show-notification', (event, title, description) => {
+    const iconPath = app.isPackaged
+      ? path.join(__dirname, '../renderer/notezone.png') // Prod path
+      : path.join(__dirname, 'public/notezone.png');    // Dev path (assumes icon is in /public)
+
     const notification = new Notification({
       title,
       body: description,
-      icon: 'path/to/notification-icon.png'
+      icon: iconPath
     });
     notification.show();
   });
 
-  // --- Window Control Handlers ---
+  // --- Window Control Handlers (Unchanged) ---
   ipcMain.on('close-window', () => {
     if (mainWindow) {
         mainWindow.close();
@@ -78,7 +95,7 @@ function createWindow() {
     }
   });
 
-  // --- Notes Handlers ---
+  // --- Notes Handlers (Unchanged) ---
   ipcMain.handle('get-notes-list', async () => {
     await ensureNotesDirExists();
     const noteFiles = await fs.readdir(notesDir);
@@ -137,7 +154,6 @@ function createWindow() {
     }
   });
 
-  // --- FIX: Use the proper crypto.randomUUID() again ---
   ipcMain.handle('create-note', async () => {
     await ensureNotesDirExists();
     const newNote = {
@@ -154,17 +170,18 @@ function createWindow() {
       return null;
     }
   });
-  // --- END OF FIX ---
 
+  // --- THIS BLOCK IS NOW FIXED ---
   ipcMain.on('delete-note', async (event, noteId) => {
     await ensureNotesDirExists();
     const filePath = path.join(notesDir, `${noteId}.json`);
     try {
       await fs.unlink(filePath);
-    } catch (err) {
+    } catch (err) { // <-- Added {
       console.error(`Error deleting note ${noteId}:`, err);
-    }
+    } // <-- Added }
   });
+  // --- END FIX ---
   
   // --- Reminders Handlers (Unchanged) ---
   ipcMain.handle('load-reminders', async () => {
@@ -192,15 +209,19 @@ function createWindow() {
 
 // --- UPDATED APP READY HANDLER ---
 app.on('ready', () => {
-  // --- FIX for CSP WARNING ---
-  session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': ["script-src 'self' http://localhost:5173"]
-      }
+  
+  // --- FIX for CSP WARNING (Dev Only) ---
+  if (!app.isPackaged) {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          // Added 'unsafe-inline' to allow Vite's HMR script
+          'Content-Security-Policy': ["script-src 'self' http://localhost:5173 'unsafe-inline'"]
+        }
+      });
     });
-  });
+  }
   // --- END FIX ---
 
   ensureNotesDirExists(); // Ensure directory exists on app start

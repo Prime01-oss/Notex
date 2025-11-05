@@ -1,14 +1,14 @@
 {
-  "name": "notes-app",
+  "name": "notex",
   "version": "1.0.0",
-  "description": "note app",
+  "description": "A simple note-taking application built with Electron, Vite, and React.",
   "main": "main.js",
   "scripts": {
     "start": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview"
   },
-  "author": "Nick",
+  "author": "Samarjit Patar",
   "license": "MIT",
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",

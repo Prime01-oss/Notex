@@ -4,16 +4,36 @@ const react = require('@vitejs/plugin-react')
 
 module.exports = defineConfig({
   main: {
+    build: {
+      lib: {
+        entry: 'main.js'
+      }
+    },
     plugins: [externalizeDepsPlugin()],
-    // Tell the bundler to treat 'crypto' as an external Node.js module
     external: [
-      'crypto'
+      'crypto',
+      'node:crypto'
     ]
   },
   preload: {
+    build: {
+      lib: {
+        entry: 'preload.js'
+      }
+    },
     plugins: [externalizeDepsPlugin()]
   },
   renderer: {
+    // --- THIS IS THE FIX ---
+    // Tell the dev server that the root is the project folder
+    root: '.', 
+    // --- END FIX ---
+    build: {
+      rollupOptions: {
+        // This is for the production build
+        input: resolve(__dirname, 'index.html') 
+      }
+    },
     resolve: {
       alias: {
         '@renderer': resolve('src')

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { Editor } from './components/Editor';
-import { WindowControls } from './components/WindowControls';
+import { WindowControls } from './components/WindowControl';
 
 function App() {
   const [notes, setNotes] = useState([]);
@@ -31,19 +31,24 @@ function App() {
     setSelectedNoteId(id);
   };
 
-  // --- Note Actions ---
+  // --- Note Actions (FIXED) ---
 
   const createNote = () => {
     window.electronAPI.createNote().then(newNote => {
-      loadNotesList();
-      setSelectedNoteId(newNote.id);
+      if (newNote) {
+        // Add the new note to the state directly
+        setNotes(prevNotes => [newNote, ...prevNotes]);
+        setSelectedNoteId(newNote.id);
+      }
     });
   };
 
   const deleteNote = () => {
     if (selectedNoteId) {
-      window.electronAPI.deleteNote(selectedNoteId);
-      loadNotesList();
+      const idToDelete = selectedNoteId;
+      window.electronAPI.deleteNote(idToDelete);
+      // Remove the note from the state directly
+      setNotes(prevNotes => prevNotes.filter(note => note.id !== idToDelete));
       setSelectedNoteId(null);
     }
   };
@@ -56,7 +61,12 @@ function App() {
 
   const updateNoteTitle = (id, newTitle) => {
     window.electronAPI.updateNoteTitle({ id, newTitle });
-    loadNotesList();
+    // Update the note title in the state directly
+    setNotes(prevNotes =>
+      prevNotes.map(note =>
+        note.id === id ? { ...note, title: newTitle } : note
+      )
+    );
   };
 
 
