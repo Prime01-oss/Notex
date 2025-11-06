@@ -1,7 +1,7 @@
 import React from 'react';
 import { Tldraw, useEditor } from '@tldraw/tldraw';
 import '@tldraw/tldraw/tldraw.css';
-import useResizeObserver from 'use-resize-observer'; // Corrected default import
+import useResizeObserver from 'use-resize-observer'; 
 import { NodeViewWrapper } from '@tiptap/react';
 
 // --- Tldraw React Component ---
@@ -11,7 +11,6 @@ const TldrawBlock = ({ node, updateAttributes }) => {
   const { width = 500, height = 300, data } = node.attrs;
 
   // Use the hook to track size of the resizable container
-  // NOTE: This MUST be a default import for this library.
   const { ref: resizeRef, width: observedWidth, height: observedHeight } = useResizeObserver();
   
   // Custom dark theme to match Notex UI (Unchanged)
@@ -29,7 +28,6 @@ const TldrawBlock = ({ node, updateAttributes }) => {
   };
 
   const handleMount = (tldrawEditor) => {
-    // Load data from the Tiptap node attribute if available
     if (data && data !== '{}') {
       try {
         tldrawEditor.store.loadSnapshot(JSON.parse(data));
@@ -40,17 +38,13 @@ const TldrawBlock = ({ node, updateAttributes }) => {
   };
 
   const handlePersist = (tldrawEditor) => {
-    // Extract current state and save it back to the Tiptap node attribute
     const snapshot = tldrawEditor.store.getSnapshot();
-    
-    // IMPORTANT: Save the entire Tldraw state as a string in the Tiptap node
     updateAttributes({
       data: JSON.stringify(snapshot),
     });
   };
 
   const handleResizeEnd = (editor, type) => {
-    // Only save the new size if the observed dimensions are different from the saved dimensions
     if (observedWidth !== width || observedHeight !== height) {
         updateAttributes({ 
             width: observedWidth, 
@@ -58,31 +52,35 @@ const TldrawBlock = ({ node, updateAttributes }) => {
         });
     }
   };
-    // Tiptap's NodeViewWrapper is the outermost element for the component.
-    // It must be connected to the Prosemirror DOM node.
+  
+  // 💡 CRITICAL FIX: Stops mouse/keyboard events from reaching Tiptap/ProseMirror.
+  const stopEventPropagation = (e) => {
+    // This function stops the event from propagating up to the Tiptap editor instance.
+    e.stopPropagation();
+  }
+
 
   return (
-    // NodeViewWrapper provides the essential Tiptap DOM node. 
-    // data-drag-handle allows the user to click and drag the block.
-    // data-resize-handle will tell Tiptap/ProseMirror how to handle the resizing.
-    <NodeViewWrapper className="tldraw-container flex justify-center py-4" data-drag-handle>
+    <NodeViewWrapper 
+      className="tldraw-container flex justify-center py-4" 
+      data-drag-handle
+      // 🎯 APPLYING THE FIX: Stops mouse/click and keyboard input from being hijacked by Tiptap
+      onMouseDown={stopEventPropagation}
+      onKeyDown={stopEventPropagation}
+    >
         <div 
-          // 💡 CRITICAL: The ref from useResizeObserver needs to be on the DOM element 
-          // that defines the size, which is this inner wrapper.
           ref={resizeRef}
-          // The size is dynamically controlled by node attributes
           style={{ width: `${width}px`, height: `${height}px` }}
           className="relative resize-x cursor-grab rounded-lg overflow-hidden shadow-2xl"
         >
           {/* Tldraw Editor Instance */}
           <Tldraw
-            persistenceKey={node.attrs.id} // Ensures instance isolation
+            persistenceKey={node.attrs.id}
             forceMobile={false}
             onMount={handleMount}
             onPersist={handlePersist}
             onResize={handleResizeEnd}
             theme={NotexTheme} 
-            // The key forces a remount when the block ID changes (though unlikely here)
             key={node.attrs.id}
           />
         </div>

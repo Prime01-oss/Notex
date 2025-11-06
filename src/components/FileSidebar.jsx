@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 // Custom simple icons for the tree structure
 const icons = {
+  // 💡 FIX: Restored built-in SVG icons for Open/Closed folders
   folder: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 20h16a2 2 0 002-2V8a2 2 0 00-2-2h-7.92a2 2 0 01-1.41-.58L9.41 3.41a2 2 0 00-1.41-.58H4a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>,
   openFolder: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 20H4a2 2 0 01-2-2V5a2 2 0 012-2h3.92a2 2 0 011.41.58L10.92 7H19a2 2 0 012 2v9a2 2 0 01-2 2z" /></svg>,
   note: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>,
@@ -91,9 +92,17 @@ function TreeItem({ item, selectedNote, onItemSelect, onUpdateTitle, onCreateFol
     setIsEditing(false);
   };
 
+  // --- Toggling Folder Expansion ---
   const handleItemClick = () => {
-    onItemSelect(item);
+    // If it's a note, select it.
+    if (item.type === 'note') {
+      onItemSelect(item);
+    } else {
+      // If it's a folder, toggle the expansion state.
+      setIsExpanded(prev => !prev);
+    }
   };
+  // --- End Toggling Folder Expansion ---
 
   const handleItemDoubleClick = () => {
     setIsEditing(true);
@@ -114,12 +123,13 @@ function TreeItem({ item, selectedNote, onItemSelect, onUpdateTitle, onCreateFol
     onCreateFolder(parentPath, folderName, onComplete);
   }
 
+  // 💡 USES BUILT-IN SVGS
   const iconToRender = item.type === 'folder' ? (isExpanded || isCreatingNestedFolder ? icons.openFolder : icons.folder) : icons.note;
 
   return (
     <li className="py-0.5">
       <div
-        onClick={handleItemClick}
+        onClick={handleItemClick} // Uses the new logic for notes/folders
         onDoubleClick={handleItemDoubleClick}
         style={{ paddingLeft: `${depth * 15}px` }}
         // 💡 UPDATED: Swapped orange accent for a deep blue, improving professionalism
@@ -140,7 +150,8 @@ function TreeItem({ item, selectedNote, onItemSelect, onUpdateTitle, onCreateFol
           onChange={(e) => setTitle(e.target.value)}
           onBlur={handleBlur}
           onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
-          onClick={(e) => { e.stopPropagation(); }}
+          // 💡 CRITICAL: Ensure input click does NOT toggle the folder state!
+          onClick={(e) => { e.stopPropagation(); }} 
           className={`no-drag flex-1 p-2 text-white rounded truncate bg-transparent focus:outline-none 
                       ${isEditing ? 'focus:bg-zinc-700/80' : ''} 
                       ${isSelected ? 'bg-blue-800/70 focus:bg-blue-800/80' : 'hover:bg-zinc-700/50'}`}
@@ -191,7 +202,7 @@ function TreeItem({ item, selectedNote, onItemSelect, onUpdateTitle, onCreateFol
 }
 
 // Main Sidebar Component
-export function Sidebar({ notes, selectedNote, onItemSelect, onCreateNote, onCreateFolder, onUpdateTitle }) {
+export function FileSidebar({ notes, selectedNote, onItemSelect, onCreateNote, onCreateFolder, onUpdateTitle }) {
   const rootPath = '.';
   // 💡 NEW STATE: To track if we are creating a folder at the root level.
   const [isCreatingRootFolder, setIsCreatingRootFolder] = useState(false);
@@ -212,20 +223,20 @@ export function Sidebar({ notes, selectedNote, onItemSelect, onCreateNote, onCre
   }
 
   return (
-    // 💡 UPDATED: Set a solid dark background and a border to create a layered look
-    <div className="w-1/3 max-w-xs bg-zinc-800 p-4 flex flex-col border-r border-zinc-700/50">
+    // 💡 FIX: Uses fixed styling to look good inside the dynamically sized container in App.jsx
+    <div className="p-4 flex flex-col h-full bg-zinc-800">
       <div className="flex justify-between gap-2 mb-4">
-        {/* Create Note at Root - Updated to professional blue accent */}
+        {/* Create Note at Root: Primary Button Style */}
         <button
           onClick={() => onCreateNote(rootPath)}
-          className="no-drag flex-1 px-2 py-2 bg-blue-600 rounded text-white font-semibold text-sm transition-colors hover:bg-blue-500"
+          className="no-drag flex-1 px-4 py-2 bg-blue-600 rounded text-white font-bold text-sm transition-colors hover:bg-blue-500 shadow-md"
         >
           + New Note
         </button>
-        {/* Create Folder at Root - Updated to a cleaner dark button */}
+        {/* Create Folder at Root: Secondary Button Style */}
         <button
           onClick={handleRootCreateFolder}
-          className="no-drag flex-1 px-2 py-2 bg-zinc-700 rounded text-white font-semibold text-sm transition-colors hover:bg-zinc-600"
+          className="no-drag flex-1 px-4 py-2 bg-zinc-700 rounded text-gray-300 font-semibold text-sm transition-colors hover:bg-zinc-600"
         >
           + Folder
         </button>

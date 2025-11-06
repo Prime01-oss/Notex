@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Sidebar } from './components/Sidebar';
+// 💡 FIX: Renamed Sidebar import to match the FileSidebar component
+import { FileSidebar } from './components/FileSidebar'; 
 import { Editor } from './components/Editor';
 import { WindowControls } from './components/WindowControl';
+// 💡 NEW: Import the NavigationBar
+import { NavigationBar } from './components/NavigationBar';
+// 💡 NEW: Import the Settings Panel
+import { SettingsPanel } from './components/SettingsPanel';
+
 
 // Helper function to find a node by its ID in the nested notes array
 const findNodeById = (nodes, id) => {
@@ -22,10 +28,17 @@ function App() {
     // selectedNote stores the full object: { id, title, type, path, children? }
     const [selectedNote, setSelectedNote] = useState(null); 
     const [currentNoteContent, setCurrentNoteContent] = useState('');
+    
+    // 💡 NEW GLOBAL STATE FOR UI
+    // 🎯 FIX: Changed initial state from 'files' to null. This starts the sidebar closed.
+    const [activePanel, setActivePanel] = useState(null); // 'files', 'search', 'settings', or null (closed)
+    const [theme, setTheme] = useState('dark'); // 'dark' or 'light'
+    const [notebookFont, setNotebookFont] = useState('sans'); // 'sans', 'serif', 'monospace'
+    const [language, setLanguage] = useState('en'); // 'en', 'es', etc.
+
 
     // 1. Load the tree structure on app start
     useEffect(() => {
-        // loadNotesList needs to return a Promise to allow chaining in folder creation
         loadNotesList();
     }, []);
 
@@ -164,7 +177,8 @@ function App() {
 
 
     return (
-        <div className="flex flex-col h-screen text-white bg-zinc-900">
+        // 💡 THEME FIX: Apply theme class to the root element.
+        <div className={`flex flex-col h-screen ${theme === 'dark' ? 'text-white bg-zinc-900' : 'text-gray-900 bg-gray-100'}`}>
             {/* 1. Custom Title Bar - Polished Look */}
             <header className="titlebar flex justify-between items-center bg-zinc-800/80 p-3 pl-4 border-b border-zinc-700/50">
                 <h1 className="text-xl font-extrabold text-blue-400 tracking-wider">Notex</h1>
@@ -172,24 +186,55 @@ function App() {
             </header>
 
             {/* 2. Main Content Area */}
-            <main className="flex flex-1 overflow-hidden bg-zinc-900">
-                {/* Sidebar */}
-                <Sidebar
-                    notes={notes} // Nested array
-                    selectedNote={selectedNote} // Full object
-                    onItemSelect={handleItemSelect} // Use a generic select handler
-                    onCreateNote={createNote}
-                    // 💡 Prop signature updated to handle the cleanup callback
-                    onCreateFolder={createFolder} 
-                    onUpdateTitle={updateItemTitle}
+            <main className="flex flex-1 overflow-hidden">
+                
+                {/* 💡 NEW: Navigation Bar (Fixed Left) */}
+                <NavigationBar 
+                    activePanel={activePanel}
+                    onPanelClick={setActivePanel} // Pass the setter to toggle panels
                 />
-                {/* Editor */}
+                
+                {/* 💡 Conditional Side Panels: Container manages opening/closing animation */}
+                <div className={`
+                    flex-shrink-0 transition-all duration-300 ease-in-out
+                    ${activePanel === 'files' || activePanel === 'settings' ? 'w-1/3 max-w-xs' : 'w-0 overflow-hidden'}
+                    `}>
+                    
+                    {/* File Sidebar */}
+                    {activePanel === 'files' && (
+                        <FileSidebar
+                            notes={notes}
+                            selectedNote={selectedNote}
+                            onItemSelect={handleItemSelect}
+                            onCreateNote={createNote}
+                            onCreateFolder={createFolder} 
+                            onUpdateTitle={updateItemTitle}
+                        />
+                    )}
+                    
+                    {/* Settings Panel */}
+                    {activePanel === 'settings' && (
+                        <SettingsPanel 
+                            theme={theme}
+                            setTheme={setTheme}
+                            notebookFont={notebookFont}
+                            setNotebookFont={setNotebookFont}
+                            language={language}
+                            setLanguage={setLanguage}
+                        />
+                    )}
+                    
+                    {/* Search Panel placeholder (Would go here as well) */}
+                    {/* {activePanel === 'search' && <SearchPanel />} */}
+                </div>
+                
+                {/* 💡 Editor: Takes up remaining space */}
                 <Editor
                     content={currentNoteContent}
                     onChange={setCurrentNoteContent}
                     onSave={saveNote}
                     onDelete={selectedNote ? deleteItem : null} 
-                    isNoteSelected={selectedNote && selectedNote.type === 'note'} // To enable/disable save/editor
+                    isNoteSelected={selectedNote && selectedNote.type === 'note'} 
                 />
             </main>
         </div>
