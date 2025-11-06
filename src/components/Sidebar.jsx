@@ -122,12 +122,13 @@ function TreeItem({ item, selectedNote, onItemSelect, onUpdateTitle, onCreateFol
         onClick={handleItemClick}
         onDoubleClick={handleItemDoubleClick}
         style={{ paddingLeft: `${depth * 15}px` }}
-        className={`flex items-center group w-full text-white rounded pr-2 cursor-pointer 
-                   ${isSelected ? 'bg-orange-700 hover:bg-orange-700' : 'hover:bg-zinc-700/50'}`}
+        // 💡 UPDATED: Swapped orange accent for a deep blue, improving professionalism
+        className={`flex items-center group w-full text-white rounded pr-2 cursor-pointer transition-colors
+                   ${isSelected ? 'bg-blue-800/70 hover:bg-blue-800/70' : 'hover:bg-zinc-700/50'}`}
       >
 
-        {/* Toggle/Icon */}
-        <div className="flex-shrink-0 flex items-center text-orange-400">
+        {/* Toggle/Icon - Swapped to blue accent */}
+        <div className="flex-shrink-0 flex items-center text-blue-400">
           {iconToRender && <span className="p-1 mr-1">{iconToRender}</span>}
         </div>
 
@@ -142,7 +143,7 @@ function TreeItem({ item, selectedNote, onItemSelect, onUpdateTitle, onCreateFol
           onClick={(e) => { e.stopPropagation(); }}
           className={`no-drag flex-1 p-2 text-white rounded truncate bg-transparent focus:outline-none 
                       ${isEditing ? 'focus:bg-zinc-700/80' : ''} 
-                      ${isSelected ? 'bg-orange-700 focus:bg-orange-700/90' : 'hover:bg-zinc-700/50'}`}
+                      ${isSelected ? 'bg-blue-800/70 focus:bg-blue-800/80' : 'hover:bg-zinc-700/50'}`}
         />
 
         {/* Actions (Folder only) - Visible on hover */}
@@ -211,21 +212,22 @@ export function Sidebar({ notes, selectedNote, onItemSelect, onCreateNote, onCre
   }
 
   return (
-    <div className="w-1/3 max-w-xs bg-zinc-800/50 p-4 flex flex-col">
+    // 💡 UPDATED: Set a solid dark background and a border to create a layered look
+    <div className="w-1/3 max-w-xs bg-zinc-800 p-4 flex flex-col border-r border-zinc-700/50">
       <div className="flex justify-between gap-2 mb-4">
-        {/* Create Note at Root */}
+        {/* Create Note at Root - Updated to professional blue accent */}
         <button
           onClick={() => onCreateNote(rootPath)}
-          className="no-drag flex-1 px-2 py-2 bg-orange-600 rounded text-white font-semibold hover:bg-orange-500"
+          className="no-drag flex-1 px-2 py-2 bg-blue-600 rounded text-white font-semibold text-sm transition-colors hover:bg-blue-500"
         >
-          New Note
+          + New Note
         </button>
-        {/* Create Folder at Root (Now calls local handler) */}
+        {/* Create Folder at Root - Updated to a cleaner dark button */}
         <button
           onClick={handleRootCreateFolder}
-          className="no-drag flex-1 px-2 py-2 bg-zinc-600 rounded text-white font-semibold hover:bg-zinc-500"
+          className="no-drag flex-1 px-2 py-2 bg-zinc-700 rounded text-white font-semibold text-sm transition-colors hover:bg-zinc-600"
         >
-          New Folder
+          + Folder
         </button>
       </div>
 

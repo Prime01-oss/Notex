@@ -240,8 +240,10 @@ app.on("ready", () => {
       callback({
         responseHeaders: {
           ...details.responseHeaders,
-          // Added 'unsafe-inline' to allow Vite's HMR script
-          "Content-Security-Policy": ["script-src 'self' http://localhost:5173 'unsafe-inline'"]
+          // RELAXED CSP to allow Tldraw to function in the Renderer process
+          "Content-Security-Policy": [
+            "default-src 'self' 'unsafe-eval' blob: data:; script-src 'self' http://localhost:5173 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' blob: data:; img-src 'self' data: blob:;"
+          ]
         }
       });
     });

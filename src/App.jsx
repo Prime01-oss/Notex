@@ -164,15 +164,15 @@ function App() {
 
 
     return (
-        <div className="flex flex-col h-screen">
-            {/* 1. Custom Title Bar */}
-            <header className="titlebar flex justify-between items-center bg-zinc-800 p-2 pl-4">
-                <h1 className="text-lg font-bold text-orange-500">Notex</h1>
+        <div className="flex flex-col h-screen text-white bg-zinc-900">
+            {/* 1. Custom Title Bar - Polished Look */}
+            <header className="titlebar flex justify-between items-center bg-zinc-800/80 p-3 pl-4 border-b border-zinc-700/50">
+                <h1 className="text-xl font-extrabold text-blue-400 tracking-wider">Notex</h1>
                 <WindowControls />
             </header>
 
             {/* 2. Main Content Area */}
-            <main className="flex flex-1 overflow-hidden">
+            <main className="flex flex-1 overflow-hidden bg-zinc-900">
                 {/* Sidebar */}
                 <Sidebar
                     notes={notes} // Nested array
