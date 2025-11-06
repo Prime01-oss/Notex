@@ -193,14 +193,26 @@ function createWindow() {
       console.error(`Error deleting item at ${itemPath}:`, err);
     }
   });
-  ipcMain.on("create-folder", async (event, parentPath, folderName) => {
+  ipcMain.handle("fs:create-folder", async (event, parentPath, folderName) => {
     await ensureNotesDirExists();
-    folderName = folderName.replace(/[^a-zA-Z0-9\s-_.]/g, "").trim() || "New Folder";
-    const fullPath = path.join(notesDir, parentPath, folderName);
+    folderName = String(folderName || "").replace(/[^a-zA-Z0-9\s-_.]/g, "").trim();
+    if (!folderName) {
+      return { success: false, error: "Invalid folder name provided." };
+    }
+    const fullPath = path.join(notesDir, parentPath || "", folderName);
     try {
       await fs.mkdir(fullPath, { recursive: true });
+      return {
+        success: true,
+        path: fullPath,
+        message: `Folder '${folderName}' created successfully.`
+      };
     } catch (err) {
       console.error(`Error creating folder ${fullPath}:`, err);
+      return {
+        success: false,
+        error: `Failed to create folder: ${err.code === "EEXIST" ? "Folder already exists." : err.message}`
+      };
     }
   });
   ipcMain.handle("load-reminders", async () => {
