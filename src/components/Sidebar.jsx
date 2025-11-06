@@ -16,17 +16,23 @@ function TreeItem({ item, selectedNote, onItemSelect, onUpdateTitle, onCreateFol
   const [isExpanded, setIsExpanded] = useState(true); 
   // Local state for immediate input feedback
   const [title, setTitle] = useState(item.title);
+  // NEW STATE: Track if the item is being edited (disabled by default)
+  const [isEditing, setIsEditing] = useState(false);
 
   // Sync local state if the note prop changes (e.g., after reload)
   useEffect(() => {
     setTitle(item.title);
-  }, [item.title]);
+    // Reset editing state when the selected item changes
+    setIsEditing(false);
+  }, [item.title, item.id]);
 
   const handleBlur = () => {
     // Only commit if the title actually changed
     if (title.trim() !== item.title) {
       onUpdateTitle(item, title);
     }
+    // Exit editing mode on blur
+    setIsEditing(false);
   };
 
   const toggleExpand = (e) => {
@@ -34,10 +40,15 @@ function TreeItem({ item, selectedNote, onItemSelect, onUpdateTitle, onCreateFol
     setIsExpanded(!isExpanded);
   }
 
-  // Handle click on the entire item container (mainly to select it)
+  // Handle click on the entire item container (SELECT / OPEN)
   const handleItemClick = () => {
     onItemSelect(item);
   };
+  
+  // NEW: Handle double-click on the item container (RENAME)
+  const handleItemDoubleClick = () => {
+    setIsEditing(true);
+  }
   
   // Handle new note creation (only in folders or root)
   const handleCreateNote = (e) => {
@@ -57,6 +68,7 @@ function TreeItem({ item, selectedNote, onItemSelect, onUpdateTitle, onCreateFol
     <li className="py-0.5">
       <div 
         onClick={handleItemClick}
+        onDoubleClick={handleItemDoubleClick} // ADDED: Double-click to rename
         // Increase padding based on depth
         style={{ paddingLeft: `${depth * 15}px` }} 
         className={`flex items-center group w-full text-white rounded pr-2 cursor-pointer 
@@ -72,12 +84,14 @@ function TreeItem({ item, selectedNote, onItemSelect, onUpdateTitle, onCreateFol
         <input
           type="text"
           value={title}
+          readOnly={!isEditing} // KEY CHANGE: Input is read-only unless isEditing is true
           onChange={(e) => setTitle(e.target.value)}
           onBlur={handleBlur}
           onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
-          // Stop propagation for editing the title input
-          onClick={(e) => { e.stopPropagation(); onItemSelect(item); }}
-          className={`no-drag flex-1 p-2 rounded truncate bg-transparent focus:outline-none focus:bg-zinc-700/80 
+          // Stop propagation for the input field (prevents re-selecting item when double-clicking the text)
+          onClick={(e) => { e.stopPropagation(); }} 
+          className={`no-drag flex-1 p-2 rounded truncate bg-transparent focus:outline-none 
+                      ${isEditing ? 'focus:bg-zinc-700/80' : ''} 
                       ${isSelected ? 'bg-orange-700 focus:bg-orange-700/90' : 'hover:bg-zinc-700/50'}`}
         />
         

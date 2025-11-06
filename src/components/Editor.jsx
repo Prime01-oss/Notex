@@ -7,7 +7,7 @@ export function Editor({ content, onChange, onSave, onDelete, isNoteSelected }) 
         value={content}
         onChange={(e) => onChange(e.target.value)}
         className="flex-1 w-full h-full p-4 bg-zinc-800/50 rounded resize-none focus:outline-none"
-        placeholder={isNoteSelected ? "Start typing your note..." : "Select a note from the sidebar to begin editing."}
+        placeholder={isNoteSelected ? "Start typing your note..." : "Select a note from the File-sidebar to begin editing."}
         // Disable text area if no note is selected
         disabled={!isNoteSelected} 
       />

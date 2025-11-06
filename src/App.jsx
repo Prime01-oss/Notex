@@ -135,7 +135,7 @@ function App() {
     <div className="flex flex-col h-screen">
       {/* 1. Custom Title Bar */}
       <header className="titlebar flex justify-between items-center bg-zinc-800 p-2 pl-4">
-        <h1 className="text-lg font-bold text-orange-500">NoteZone</h1>
+        <h1 className="text-lg font-bold text-orange-500">Notex</h1>
         <WindowControls />
       </header>
 
