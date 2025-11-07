@@ -7,6 +7,8 @@ import { WindowControls } from './components/WindowControl';
 import { NavigationBar } from './components/NavigationBar';
 // 💡 NEW: Import the Settings Panel
 import { SettingsPanel } from './components/SettingsPanel';
+// 💡 1. IMPORT THE NEW PROFILE PANEL
+import { ProfilePanel } from './components/ProfilePanel';
 
 
 // Helper function to find a node by its ID in the nested notes array
@@ -31,7 +33,7 @@ function App() {
     
     // 💡 NEW GLOBAL STATE FOR UI
     // 🎯 FIX: Changed initial state from 'files' to null. This starts the sidebar closed.
-    const [activePanel, setActivePanel] = useState(null); // 'files', 'search', 'settings', or null (closed)
+    const [activePanel, setActivePanel] = useState(null); // 'files', 'search', 'settings', or 'profile' (added profile)
     const [theme, setTheme] = useState('dark'); // 'dark' or 'light'
     const [notebookFont, setNotebookFont] = useState('sans'); // 'sans', 'serif', 'monospace'
     const [language, setLanguage] = useState('en'); // 'en', 'es', etc.
@@ -53,6 +55,17 @@ function App() {
             setCurrentNoteContent(''); // Clear editor for folders or nothing selected
         }
     }, [selectedNote]);
+    
+    // 💡 NEW: This effect manages the 'dark' class on the <html> tag
+    // This controls Tailwind's darkMode: 'class' functionality.
+    useEffect(() => {
+        const root = window.document.documentElement;
+        if (theme === 'dark') {
+            root.classList.add('dark');
+        } else {
+            root.classList.remove('dark');
+        }
+    }, [theme]); // Re-run this effect whenever 'theme' changes
 
     // 💡 IMPORTANT: loadNotesList must return the Promise so we can chain it.
     const loadNotesList = () => {
@@ -109,7 +122,6 @@ function App() {
                     // Ensure cleanup happens if an error occurred before step 4
                     if (error.message.includes('Main Process') && onComplete) {
                         // This path is already handled above, but here for robustness.
-                        // We skip calling onComplete again if it was handled in the previous .then()
                     } else if (onComplete) {
                         onComplete();
                     }
@@ -177,26 +189,32 @@ function App() {
 
 
     return (
-        // 💡 THEME FIX: Apply theme class to the root element.
-        <div className={`flex flex-col h-screen ${theme === 'dark' ? 'text-white bg-zinc-900' : 'text-gray-900 bg-gray-100'}`}>
-            {/* 1. Custom Title Bar - Polished Look */}
-            <header className="titlebar flex justify-between items-center bg-zinc-800/80 p-3 pl-4 border-b border-zinc-700/50">
-                <h1 className="text-xl font-extrabold text-blue-400 tracking-wider">Notex</h1>
+        // 💡 1. UPDATED Root Div for light/dark mode
+        // Removed the ternary and now rely on the <html> class.
+        <div className="flex flex-col h-screen relative bg-gray-100 text-gray-900 dark:bg-zinc-900 dark:text-white">
+            
+            {/* 💡 2. UPDATED Header for light/dark mode */}
+            <header className="titlebar flex justify-between items-center p-3 pl-4 
+                          bg-gray-200/80 border-b border-gray-300/50 
+                          dark:bg-zinc-800/80 dark:border-zinc-700/50">
+                {/* 💡 3. UPDATED H1 for light/dark mode */}
+                <h1 className="text-xl font-extrabold text-blue-600 dark:text-blue-400 tracking-wider">Notex</h1>
                 <WindowControls />
             </header>
 
             {/* 2. Main Content Area */}
             <main className="flex flex-1 overflow-hidden">
                 
-                {/* 💡 NEW: Navigation Bar (Fixed Left) */}
+                {/* Navigation Bar (Fixed Left) */}
                 <NavigationBar 
                     activePanel={activePanel}
                     onPanelClick={setActivePanel} // Pass the setter to toggle panels
                 />
                 
-                {/* 💡 Conditional Side Panels: Container manages opening/closing animation */}
+                {/* Conditional Side Panels: Container manages opening/closing animation */}
                 <div className={`
                     flex-shrink-0 transition-all duration-300 ease-in-out
+                    ${/* 'profile' is correctly removed for the pop-up logic */ ''}
                     ${activePanel === 'files' || activePanel === 'settings' ? 'w-1/3 max-w-xs' : 'w-0 overflow-hidden'}
                     `}>
                     
@@ -224,11 +242,9 @@ function App() {
                         />
                     )}
                     
-                    {/* Search Panel placeholder (Would go here as well) */}
-                    {/* {activePanel === 'search' && <SearchPanel />} */}
                 </div>
                 
-                {/* 💡 Editor: Takes up remaining space */}
+                {/* Editor: Takes up remaining space */}
                 <Editor
                     content={currentNoteContent}
                     onChange={setCurrentNoteContent}
@@ -237,6 +253,9 @@ function App() {
                     isNoteSelected={selectedNote && selectedNote.type === 'note'} 
                 />
             </main>
+
+            {/* RENDER THE PROFILE PANEL HERE (outside 'main') */}
+            {activePanel === 'profile' && <ProfilePanel />}
         </div>
     );
 }
