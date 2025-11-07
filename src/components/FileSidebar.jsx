@@ -11,6 +11,8 @@ const icons = {
   openFolder: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 20H4a2 2 0 01-2-2V5a2 2 0 012-2h3.92a2 2 0 011.41.58L10.92 7H19a2 2 0 012 2v9a2 2 0 01-2 2z" /></svg>,
   note: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>,
   search: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>,
+  // 💡 1. Added the trash icon
+  trash: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
 };
 
 // Reusable component for the inline folder creation input
@@ -18,7 +20,7 @@ function NewFolderInput({
   parentPath,
   onCreateFolder,
   onCancel,
-  depth = 0 // 💡 ADDED: Depth for correct indentation
+  depth = 0
 }) {
   const [name, setName] = useState('');
   const inputRef = React.useRef(null);
@@ -48,18 +50,14 @@ function NewFolderInput({
   };
 
   return (
-    // 💡 UPDATED: Use depth for padding
     <li className="py-0.5" style={{ paddingLeft: `${depth * 15}px` }}>
       <div
-        // 💡 UPDATED: Theme-aware highlight for the input row
         className="flex items-center w-full rounded pr-2 bg-gray-200/50 dark:bg-zinc-700/50"
       >
-        {/* 💡 UPDATED: Theme-aware icon color */}
         <div className="flex-shrink-0 flex items-center text-blue-600 dark:text-blue-400">
           <span className="p-1 mr-1">{icons.folder}</span>
         </div>
 
-        {/* Input Field */}
         <input
           ref={inputRef}
           type="text"
@@ -69,7 +67,6 @@ function NewFolderInput({
           onKeyDown={handleKeyDown}
           placeholder="New folder name..."
           disabled={isSubmitting}
-          // 💡 UPDATED: Theme-aware input classes
           className={`no-drag flex-1 p-2 rounded truncate bg-transparent focus:outline-none
                       text-black dark:text-white
                       focus:bg-gray-200/80 dark:focus:bg-zinc-700/80`}
@@ -87,6 +84,7 @@ function TreeItem({
   onUpdateTitle,
   onCreateFolder,
   onCreateNote,
+  onDeleteItem, // 💡 2. Receive the new delete prop
   depth = 0
 }) {
   const isSelected = selectedNote && selectedNote.id === item.id;
@@ -100,12 +98,9 @@ function TreeItem({
     setIsEditing(false);
   }, [item.title, item.id]);
 
-  // 💡 NEW: Automatically expand folders if search is active
   useEffect(() => {
-    // This logic is now handled by the filter function returning all children
-    // if the parent matches. We just need to keep it expanded.
     setIsExpanded(true); 
-  }, [item.children]); // Re-run if children change (due to filtering)
+  }, [item.children]);
 
 
   const handleBlur = () => {
@@ -137,6 +132,21 @@ function TreeItem({
     setIsExpanded(true);
     setIsCreatingNestedFolder(true);
   }
+  
+  // 💡 3. Add the delete click handler
+  const handleDeleteClick = (e) => {
+    e.stopPropagation(); // Stop it from selecting the folder
+    
+    // Show the confirmation pop-up
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete the folder "${item.title}" and all its contents?`
+    );
+
+    // If user clicks "OK", call the delete function
+    if (confirmDelete) {
+      onDeleteItem(item);
+    }
+  };
 
   const handleNestedFolderCreation = (parentPath, folderName, onComplete) => {
     onCreateFolder(parentPath, folderName, onComplete);
@@ -150,7 +160,6 @@ function TreeItem({
         onClick={handleItemClick}
         onDoubleClick={handleItemDoubleClick}
         style={{ paddingLeft: `${depth * 15}px` }}
-        // 💡 UPDATED: Premium theme-aware classes for selection and hover
         className={`flex items-center group w-full rounded pr-2 cursor-pointer transition-colors
                     text-gray-800 dark:text-gray-200
                     ${isSelected
@@ -159,12 +168,10 @@ function TreeItem({
                     }`}
       >
 
-        {/* 💡 UPDATED: Theme-aware icon color (matches text on selection) */}
         <div className={`flex-shrink-0 flex items-center ${isSelected ? 'text-blue-700 dark:text-white' : 'text-blue-600 dark:text-blue-400'}`}>
           {iconToRender && <span className="p-1 mr-1">{iconToRender}</span>}
         </div>
 
-        {/* Title Input */}
         <input
           type="text"
           value={title}
@@ -173,7 +180,6 @@ function TreeItem({
           onBlur={handleBlur}
           onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
           onClick={(e) => { e.stopPropagation(); }}
-          // 💡 UPDATED: Theme-aware input classes for all states
           className={`no-drag flex-1 p-2 rounded truncate bg-transparent focus:outline-none
                       ${isEditing
                         ? 'focus:bg-gray-200/80 dark:focus:bg-zinc-700/80'
@@ -187,12 +193,15 @@ function TreeItem({
         {/* Actions (Folder only) - Visible on hover */}
         {item.type === 'folder' && !isCreatingNestedFolder && (
           <div className="no-drag flex flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-            {/* 💡 UPDATED: Theme-aware hover colors for action icons */}
             <button onClick={handleCreateNote} className="no-drag p-1 text-gray-500 hover:text-green-500 dark:text-gray-400 dark:hover:text-green-500" title="New Note">
               {icons.note}
             </button>
             <button onClick={handleCreateFolder} className="no-drag p-1 text-gray-500 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-500" title="New Folder">
               {icons.folder}
+            </button>
+            {/* 💡 4. Add the trash button */}
+            <button onClick={handleDeleteClick} className="no-drag p-1 text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-500" title="Delete Folder">
+              {icons.trash}
             </button>
           </div>
         )}
@@ -200,14 +209,13 @@ function TreeItem({
 
       {/* Children (Recursion) */}
       {item.children && item.type === 'folder' && isExpanded && (
-        // 💡 NEW: Added classes for the vertical tree line
         <ul className="pl-4 ml-[11px] border-l border-gray-300 dark:border-zinc-700">
           {isCreatingNestedFolder && (
             <NewFolderInput
               parentPath={item.path}
               onCreateFolder={handleNestedFolderCreation}
               onCancel={() => setIsCreatingNestedFolder(false)}
-              depth={0} // 💡 Child inputs are aligned by the UL's padding
+              depth={0}
             />
           )}
 
@@ -220,7 +228,8 @@ function TreeItem({
               onUpdateTitle={onUpdateTitle}
               onCreateFolder={onCreateFolder}
               onCreateNote={onCreateNote}
-              depth={0} // 💡 Child items are aligned by the UL's padding
+              onDeleteItem={onDeleteItem} // 💡 5. Pass prop down recursively
+              depth={0}
             />
           ))}
         </ul>
@@ -229,29 +238,20 @@ function TreeItem({
   );
 }
 
-// 💡 NEW: Recursive filtering function
 const filterTree = (nodes, term) => {
-  // If no search term, return all nodes
   if (!term) return nodes;
-
   const lowerCaseTerm = term.toLowerCase();
-
   return nodes.reduce((acc, node) => {
     const nodeMatches = node.title.toLowerCase().includes(lowerCaseTerm);
-
     if (node.type === 'folder') {
       const filteredChildren = filterTree(node.children || [], term);
-
-      // If the folder itself matches, keep it and ALL its original children
       if (nodeMatches) {
         acc.push({ ...node, children: node.children || [] });
       }
-      // Else, if it has filtered children, keep it with ONLY the filtered children
       else if (filteredChildren.length > 0) {
         acc.push({ ...node, children: filteredChildren });
       }
     } else {
-      // It's a note, keep it only if it matches
       if (nodeMatches) {
         acc.push({ ...node });
       }
@@ -267,14 +267,13 @@ export function FileSidebar({
   onItemSelect,
   onCreateNote,
   onCreateFolder,
-  onUpdateTitle
+  onUpdateTitle,
+  onDeleteItem // 💡 6. Receive prop from App.jsx
 }) {
   const rootPath = '.';
   const [isCreatingRootFolder, setIsCreatingRootFolder] = useState(false);
-  // 💡 NEW: State for the search bar
   const [searchTerm, setSearchTerm] = useState('');
 
-  // 💡 NEW: Memoized filter logic
   const filteredNotes = useMemo(() => filterTree(notes, searchTerm), [notes, searchTerm]);
 
   const handleRootCreateFolder = () => {
@@ -290,10 +289,8 @@ export function FileSidebar({
   }
 
   return (
-    // 💡 UPDATED: Main container for professional light/dark theme
     <div className="p-4 flex flex-col h-full bg-white dark:bg-zinc-800 border-r border-gray-200 dark:border-zinc-700/50">
       
-      {/* 💡 NEW: Search Bar */}
       <div className="relative mb-4">
         <input
           type="text"
@@ -310,13 +307,12 @@ export function FileSidebar({
         </div>
       </div>
       
-      {/* --- Action Buttons --- */}
       <div className="flex justify-between gap-2 mb-4">
         <button
           onClick={() => onCreateNote(rootPath)}
           className="no-drag flex-1 px-4 py-2 bg-blue-600 rounded text-white font-bold text-sm transition-colors hover:bg-blue-500 shadow-md"
         >
-          + New Note
+          + Note
         </button>
         <button
           onClick={handleRootCreateFolder}
@@ -325,20 +321,24 @@ export function FileSidebar({
         >
           + Folder
         </button>
+         <button
+          // onClick={handleRootCreateCanvas}
+          className="no-drag flex-1 px-4 py-2 bg-purple-700 rounded text-white font-bold text-sm transition-colors hover:bg-purple-600 shadow-md"
+        >
+          + Canvas
+        </button>
       </div>
 
-      {/* List of root-level items */}
       <ul className="flex-1 overflow-y-auto">
         {isCreatingRootFolder && (
           <NewFolderInput
             parentPath={rootPath}
             onCreateFolder={handleCreationFromInput}
             onCancel={handleCancelRootCreation}
-            depth={0} // Root level
+            depth={0}
           />
         )}
 
-        {/* 💡 UPDATED: Map over filteredNotes */}
         {filteredNotes.map(note => (
           <TreeItem
             key={note.id}
@@ -348,7 +348,8 @@ export function FileSidebar({
             onUpdateTitle={onUpdateTitle}
             onCreateFolder={handleCreationFromInput}
             onCreateNote={onCreateNote}
-            depth={0} // Root items
+            onDeleteItem={onDeleteItem} // 💡 7. Pass prop to the first TreeItem map
+            depth={0}
           />
         ))}
       </ul>
