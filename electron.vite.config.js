@@ -39,6 +39,13 @@ module.exports = defineConfig({
         '@renderer': resolve('src')
       }
     },
-    plugins: [react()]
+    plugins: [react()],
+    server: {
+      fs: {
+        // This setting allows Vite to serve files from parent directories,
+        // which fixes the 404 errors for Tldraw's assets.
+        strict: false 
+      }
+    }
   }
 })

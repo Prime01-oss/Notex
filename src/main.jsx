@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.jsx';
+import '@tldraw/tldraw/tldraw.css'
 import './index.css';
 
 // 💡 FIX: This line imports Tldraw's required base styles globally

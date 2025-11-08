@@ -8,12 +8,12 @@ const userDataPath = app.getPath('userData');
 const notesDir = path.join(userDataPath, 'Notes');
 const remindersFilePath = path.join(userDataPath, 'reminders.json');
 
-// --- Helper functions (Unchanged) ---
+// --- Helper functions (small fix: recursive mkdir) ---
 async function ensureNotesDirExists() {
     try {
         await fs.stat(notesDir);
     } catch (err) {
-        await fs.mkdir(notesDir);
+        await fs.mkdir(notesDir, { recursive: true });
     }
 }
 
@@ -23,7 +23,6 @@ async function scanNotesDir(currentPath, baseDir) {
     const tree = [];
 
     for (const entry of entries) {
-        // Ignore hidden files
         if (entry.name.startsWith('.')) continue;
 
         const fullPath = path.join(currentPath, entry.name);
@@ -38,8 +37,7 @@ async function scanNotesDir(currentPath, baseDir) {
                 path: relativePath,
                 children: children
             });
-        
-        // ⬇️ --- FILE SCANNING LOGIC --- ⬇️
+
         } else if (entry.isFile() && entry.name.endsWith('.canvas.json')) {
             try {
                 const fileData = await fs.readFile(fullPath, 'utf8');
@@ -48,47 +46,43 @@ async function scanNotesDir(currentPath, baseDir) {
                 tree.push({
                     id: canvas.id,
                     title: canvas.title,
-                    type: 'canvas', // <-- NEW TYPE
+                    type: 'canvas',
                     path: relativePath,
+                    createdAt: canvas.createdAt || null
                 });
             } catch (err) {
                 console.error(`Error reading canvas file ${entry.name} at ${relativePath}:`, err);
             }
-        } else if (entry.isFile() && entry.name.endsWith('.json')) { // <-- NOTE LOGIC MOVED HERE
+        } else if (entry.isFile() && entry.name.endsWith('.json')) {
             try {
                 const fileData = await fs.readFile(fullPath, 'utf8');
                 const note = JSON.parse(fileData);
 
                 tree.push({
-                    id: note.id, // Keep the UUID as the canonical ID
+                    id: note.id,
                     title: note.title,
                     type: 'note',
-                    path: relativePath, // Relative path for file operations
+                    path: relativePath,
+                    createdAt: note.createdAt || null
                 });
             } catch (err) {
                 console.error(`Error reading note file ${entry.name} at ${relativePath}:`, err);
             }
         }
-        // ⬆️ --- END OF FILE SCANNING LOGIC --- ⬆️
-
     }
     return tree.sort((a, b) => {
-        // Sort folders before notes, then alphabetically
         if (a.type === 'folder' && b.type !== 'folder') return -1;
         if (a.type !== 'folder' && b.type === 'folder') return 1;
         return a.title.localeCompare(b.title);
     });
 }
-// --- END NEW HELPER ---
 
 let mainWindow;
 
 function createWindow() {
-    // --- FIX: RESTORED preloadScript DECLARATION ---
     const preloadScript = app.isPackaged
-        ? path.join(__dirname, '../preload/preload.js') // Production path
-        : path.join(__dirname, 'preload.js');          // Development path
-    // --- END FIX ---
+        ? path.join(__dirname, '../preload/preload.js')
+        : path.join(__dirname, 'preload.js');
 
     mainWindow = new BrowserWindow({
         width: 1300,
@@ -109,25 +103,20 @@ function createWindow() {
         show: false
     });
 
-    // --- UPDATED LOADING LOGIC (THE FIX) ---
-    const devServerURL = 'http://localhost:5173'; // Default Vite port
+    const devServerURL = 'http://localhost:5173';
 
     if (!app.isPackaged) {
         console.log('[DEBUG] Loading Dev Server URL: ' + devServerURL);
         mainWindow.loadURL(devServerURL);
     } else {
         console.log('[DEBUG] Loading Production File');
-        // This path is for production builds
         mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
     }
-    // --- END LOGIC ---
 
-
-    // --- 'show-notification' handler (Unchanged) ---
     ipcMain.on('show-notification', (event, title, description) => {
         const iconPath = app.isPackaged
-            ? path.join(__dirname, '../renderer/notezone.png') // Prod path
-            : path.join(__dirname, 'public/notezone.png');    // Dev path (assumes icon is in /public)
+            ? path.join(__dirname, '../renderer/notezone.png')
+            : path.join(__dirname, 'public/notezone.png');
 
         const notification = new Notification({
             title,
@@ -137,76 +126,90 @@ function createWindow() {
         notification.show();
     });
 
-    // --- Window Control Handlers (Unchanged) ---
     ipcMain.on('close-window', () => {
-        if (mainWindow) {
-            mainWindow.close();
-        }
+        if (mainWindow) mainWindow.close();
     });
     ipcMain.on('minimize-window', () => {
-        if (mainWindow) {
-            mainWindow.minimize();
-        }
+        if (mainWindow) mainWindow.minimize();
     });
     ipcMain.on('maximize-window', () => {
         if (mainWindow) {
-            if (mainWindow.isMaximized()) {
-                mainWindow.unmaximize();
-            } else {
-                mainWindow.maximize();
-            }
+            if (mainWindow.isMaximized()) mainWindow.unmaximize();
+            else mainWindow.maximize();
         }
     });
 
-    // --- UPDATED Notes Handlers to support Tree Structure (Unchanged) ---
+    // --- Updated Notes Handlers ---
 
-    // 1. Get Notes List (now returns a nested tree)
+    // 1. Get Notes List
     ipcMain.handle('get-notes-list', async () => {
         await ensureNotesDirExists();
-        return scanNotesDir(notesDir, notesDir); // Use new recursive scanner
+        return scanNotesDir(notesDir, notesDir);
     });
 
-    // 2. Get Note Content (uses notePath)
+    // 2. Get Note Content
     ipcMain.handle('get-note-content', async (event, notePath) => {
         await ensureNotesDirExists();
-        const fullPath = path.join(notesDir, notePath); // Use full path
+        const fullPath = path.join(notesDir, notePath);
         try {
             const fileData = await fs.readFile(fullPath, 'utf8');
             const note = JSON.parse(fileData);
-            return note.content;
+
+            // ✅ FIX #3: only parse JSON-like strings safely
+            if (typeof note.content === 'string' && note.content.trim().startsWith('{')) {
+                try {
+                    note.content = JSON.parse(note.content);
+                } catch {
+                    /* keep as string */
+                }
+            }
+
+            return { ...note, createdAt: note.createdAt || (note.content?.createdAt ?? null) };
         } catch (err) {
             console.error(`Error reading note at ${notePath}:`, err);
             return null;
         }
     });
 
-    // 3. Save Note Content (uses notePath)
-    ipcMain.on('save-note-content', async (event, { id, path: notePath, content }) => {
+    // 3. Save Note Content
+    ipcMain.handle('save-note-content', async (event, { id, path: notePath, content }) => {
         await ensureNotesDirExists();
-        const fullPath = path.join(notesDir, notePath); // Use full path
+        const fullPath = path.join(notesDir, notePath);
+
         try {
             const fileData = await fs.readFile(fullPath, 'utf8');
             const note = JSON.parse(fileData);
-            note.content = content;
+
+            // ✅ FIX #1: Always save string content properly
+            if (note.type === 'canvas') {
+                try {
+                    note.content = typeof content === 'string' ? JSON.parse(content) : content;
+                } catch {
+                    note.content = content;
+                }
+            } else {
+                note.content = typeof content === 'string' ? content : JSON.stringify(content);
+            }
+
+            // ✅ FIX #2: Update metadata and save safely
+            note.updatedAt = new Date().toISOString();
             await fs.writeFile(fullPath, JSON.stringify(note, null, 2));
+            return { success: true, path: notePath, updatedAt: note.updatedAt };
         } catch (err) {
             console.error(`Error saving note at ${notePath}:`, err);
+            return { success: false, error: err.message };
         }
     });
 
-    // 4. Update Item Title (for notes and folders)
-    // ⬇️ --- FIX 2: CHANGED 'on' TO 'handle' --- ⬇️
+    // 4. Update Item Title
     ipcMain.handle('update-note-title', async (event, { id, path: oldPath, newTitle, type }) => {
         await ensureNotesDirExists();
         const oldFullPath = path.join(notesDir, oldPath);
 
-        // Sanitize new title to prevent path traversal
         newTitle = newTitle.replace(/[^a-zA-Z0-9\s-_.]/g, '').trim() || 'Untitled';
 
         if (type === 'folder') {
-            // Rename the directory on the file system
             const newFullPath = path.join(path.dirname(oldFullPath), newTitle);
-            // Prevent renaming to the same name or an empty name
             if (oldFullPath === newFullPath) return;
 
             try {
@@ -214,13 +217,11 @@ function createWindow() {
             } catch (err) {
                 console.error(`Error renaming folder ${oldPath}:`, err);
             }
-        // ⬇️ --- FIX 1 (Continued): ADDED 'canvas' TYPE TO TITLE UPDATE --- ⬇️
         } else if (type === 'note' || type === 'canvas') {
-            // A note's title is stored inside its JSON file
             try {
                 const fileData = await fs.readFile(oldFullPath, 'utf8');
                 const note = JSON.parse(fileData);
-                note.title = newTitle; // Update the title property
+                note.title = newTitle;
                 await fs.writeFile(oldFullPath, JSON.stringify(note, null, 2));
             } catch (err) {
                 console.error(`Error updating title for note ${id}:`, err);
@@ -228,122 +229,124 @@ function createWindow() {
         }
     });
 
-    // 5. Create Note (supports parentPath)
-    ipcMain.handle('create-note', async (event, parentPath = '.') => {
+    // 5. Create Note
+    ipcMain.handle('create-note', async (event, parentPath = '.', noteName = 'New Note') => {
         await ensureNotesDirExists();
-        const fullDirPath = path.join(notesDir, parentPath); // Full folder path
+
+        const fullDirPath = path.join(notesDir, parentPath);
+        const safeTitle = (noteName || 'New Note').trim();
+
+        const createdAt = new Date().toLocaleString([], {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
 
         const newNote = {
             id: crypto.randomUUID(),
-            title: 'New Note',
-            content: ''
+            title: safeTitle,
+            content: { createdAt, content: '' },
+            type: 'note',
+            createdAt
         };
+
         const fileName = `${newNote.id}.json`;
         const filePath = path.join(fullDirPath, fileName);
 
         try {
-            await fs.mkdir(fullDirPath, { recursive: true }); // Ensure path exists
+            await fs.mkdir(fullDirPath, { recursive: true });
             await fs.writeFile(filePath, JSON.stringify(newNote, null, 2));
 
             const relativePath = path.relative(notesDir, filePath);
 
-            // Return the new node data structure
-            return { id: newNote.id, title: newNote.title, type: 'note', path: relativePath };
+            return { id: newNote.id, title: newNote.title, type: 'note', path: relativePath, createdAt };
         } catch (err) {
             console.error('Error creating new note:', err);
             return null;
         }
     });
 
-    // 6. Delete Note/Folder (uses path and type)
+    // 6. Delete Note/Folder
     ipcMain.handle('delete-note', async (event, itemPath, type) => {
         await ensureNotesDirExists();
-        const fullPath = path.join(notesDir, itemPath); // Use full path
+        const fullPath = path.join(notesDir, itemPath);
         try {
             if (type === 'folder') {
-                // Recursively remove directory
                 await fs.rm(fullPath, { recursive: true, force: true });
             } else {
-                // Delete note file
                 await fs.unlink(fullPath);
             }
         } catch (err) {
-                console.error(`Error deleting item at ${itemPath}:`, err);
+            console.error(`Error deleting item at ${itemPath}:`, err);
         }
     });
 
-    // 7. NEW: Create Folder
+    // 7. Create Folder
     ipcMain.handle('fs:create-folder', async (event, parentPath, folderName) => {
-        // 1. Ensure the root notes directory exists
         await ensureNotesDirExists();
 
-        // 2. Sanitize folderName (Good practice!)
         folderName = String(folderName || '')
             .replace(/[^a-zA-Z0-9\s-_.]/g, '')
             .trim();
 
-        // Prevent creating a folder with an invalid or empty name after sanitization
         if (!folderName) {
             return { success: false, error: 'Invalid folder name provided.' };
         }
 
-        // 3. Construct the full path
-        // path.join handles the parentPath being empty or containing separators
         const fullPath = path.join(notesDir, parentPath || '', folderName);
 
         try {
-            // 4. Create the directory (with recursive option)
             await fs.mkdir(fullPath, { recursive: true });
-
-            // 5. Return success result
-            return {
-                success: true,
-                path: fullPath,
-                message: `Folder '${folderName}' created successfully.`
-            };
-
+            return { success: true, path: fullPath, message: `Folder '${folderName}' created successfully.` };
         } catch (err) {
-            // Log the detailed error in the Main Process console
             console.error(`Error creating folder ${fullPath}:`, err);
-
-            // 6. Return failure result with a user-friendly error message
-            return {
-                success: false,
-                error: `Failed to create folder: ${err.code === 'EEXIST' ? 'Folder already exists.' : err.message}`
-            };
+            return { success: false, error: `Failed to create folder: ${err.message}` };
         }
     });
-    // main.js
 
-    // 8. NEW: Create Canvas
-    ipcMain.handle('create-canvas', async (event, parentPath = '.') => {
+    // 8. Create Canvas
+    ipcMain.handle('create-canvas', async (event, parentPath = '.', canvasName = 'New Canvas') => {
         await ensureNotesDirExists();
-        const fullDirPath = path.join(notesDir, parentPath); // Full folder path
+        const fullDirPath = path.join(notesDir, parentPath);
+
+        const safeTitle = (canvasName || 'New Canvas').trim();
+
+        const createdAt = new Date().toLocaleString([], {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
 
         const newCanvas = {
             id: crypto.randomUUID(),
-            title: 'New Canvas',
-            type: 'canvas', // <-- NEW TYPE
-            content: '[]' // <-- Excalidraw's empty state
+            title: safeTitle,
+            type: 'canvas',
+            createdAt,
+            content: JSON.stringify({ store: {}, createdAt })
         };
-        const fileName = `${newCanvas.id}.canvas.json`; // <-- NEW FILE EXTENSION
+
+        const fileName = `${newCanvas.id}.canvas.json`;
         const filePath = path.join(fullDirPath, fileName);
 
         try {
-            await fs.mkdir(fullDirPath, { recursive: true }); // Ensure path exists
+            await fs.mkdir(fullDirPath, { recursive: true });
             await fs.writeFile(filePath, JSON.stringify(newCanvas, null, 2));
 
             const relativePath = path.relative(notesDir, filePath);
+            return { success: true, newItem: { id: newCanvas.id, title: newCanvas.title, type: 'canvas', path: relativePath, createdAt } };
 
-            // Return the new canvas data structure
-            return { id: newCanvas.id, title: newCanvas.title, type: 'canvas', path: relativePath };
         } catch (err) {
             console.error('Error creating new canvas:', err);
             return null;
         }
     });
 
-    // ... (your existing 'fs:create-folder' function)
     // --- Reminders Handlers (Unchanged) ---
     ipcMain.handle('load-reminders', async () => {
         try {
@@ -358,7 +361,6 @@ function createWindow() {
         await fs.writeFile(remindersFilePath, JSON.stringify(reminders));
     });
 
-
     mainWindow.on('ready-to-show', () => {
         mainWindow.show();
     });
@@ -370,36 +372,29 @@ function createWindow() {
 
 // --- UPDATED APP READY HANDLER (FIXED CSP) ---
 app.on('ready', () => {
-
-    // ⬇️ TEMPORARY FIX: FORCE CACHE CLEAR ⬇️
     session.defaultSession.clearCache();
 
-    // --- FIXED CSP FOR ESM.SH + TLDRAW (Dev Only) ---
-   if (!app.isPackaged) {
-    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-        callback({
-            responseHeaders: {
-                ...details.responseHeaders,
-                'Content-Security-Policy': [
-                    "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: http://localhost:5173 ws://localhost:5173 https://cdn.tldraw.com https://unpkg.com https://esm.sh; " +
-                    "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:5173 https://esm.sh https://unpkg.com; " +
-                    "style-src 'self' 'unsafe-inline' blob: data: https://unpkg.com https://esm.sh; " +
-                    "font-src 'self' data: blob: https://cdn.tldraw.com https://unpkg.com https://esm.sh; " +
-                    "img-src 'self' data: blob: https://cdn.tldraw.com https://unpkg.com https://esm.sh; " +
-                    "connect-src 'self' http://localhost:5173 ws://localhost:5173 https://cdn.tldraw.com https://unpkg.com https://esm.sh;"
-                ]
-            }
+    if (!app.isPackaged) {
+        session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+            callback({
+                responseHeaders: {
+                    ...details.responseHeaders,
+                    'Content-Security-Policy': [
+                        "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: http://localhost:5173 ws://localhost:5173 https://cdn.tldraw.com https://unpkg.com https://esm.sh; " +
+                        "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:5173 https://esm.sh https://unpkg.com; " +
+                        "style-src 'self' 'unsafe-inline' blob: data: https://unpkg.com https://esm.sh; " +
+                        "font-src 'self' data: blob: https://cdn.tldraw.com https://unpkg.com https://esm.sh; " +
+                        "img-src 'self' data: blob: https://cdn.tldraw.com https://unpkg.com https://esm.sh; " +
+                        "connect-src 'self' http://localhost:5173 ws://localhost:5173 https://cdn.tldraw.com https://unpkg.com https://esm.sh;"
+                    ]
+                }
+            });
         });
-    });
-}
+    }
 
-    // --- END FIX ---
-
-    ensureNotesDirExists(); // Ensure directory exists on app start
+    ensureNotesDirExists();
     createWindow();
 });
-
-    // --- END FIX ---
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {

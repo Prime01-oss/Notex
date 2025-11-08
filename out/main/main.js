@@ -10,7 +10,7 @@ async function ensureNotesDirExists() {
   try {
     await fs.stat(notesDir);
   } catch (err) {
-    await fs.mkdir(notesDir);
+    await fs.mkdir(notesDir, { recursive: true });
   }
 }
 async function scanNotesDir(currentPath, baseDir) {
@@ -37,8 +37,8 @@ async function scanNotesDir(currentPath, baseDir) {
           id: canvas.id,
           title: canvas.title,
           type: "canvas",
-          // <-- NEW TYPE
-          path: relativePath
+          path: relativePath,
+          createdAt: canvas.createdAt || null
         });
       } catch (err) {
         console.error(`Error reading canvas file ${entry.name} at ${relativePath}:`, err);
@@ -49,11 +49,10 @@ async function scanNotesDir(currentPath, baseDir) {
         const note = JSON.parse(fileData);
         tree.push({
           id: note.id,
-          // Keep the UUID as the canonical ID
           title: note.title,
           type: "note",
-          path: relativePath
-          // Relative path for file operations
+          path: relativePath,
+          createdAt: note.createdAt || null
         });
       } catch (err) {
         console.error(`Error reading note file ${entry.name} at ${relativePath}:`, err);
@@ -105,22 +104,15 @@ function createWindow() {
     notification.show();
   });
   ipcMain.on("close-window", () => {
-    if (mainWindow) {
-      mainWindow.close();
-    }
+    if (mainWindow) mainWindow.close();
   });
   ipcMain.on("minimize-window", () => {
-    if (mainWindow) {
-      mainWindow.minimize();
-    }
+    if (mainWindow) mainWindow.minimize();
   });
   ipcMain.on("maximize-window", () => {
     if (mainWindow) {
-      if (mainWindow.isMaximized()) {
-        mainWindow.unmaximize();
-      } else {
-        mainWindow.maximize();
-      }
+      if (mainWindow.isMaximized()) mainWindow.unmaximize();
+      else mainWindow.maximize();
     }
   });
   ipcMain.handle("get-notes-list", async () => {
@@ -133,22 +125,39 @@ function createWindow() {
     try {
       const fileData = await fs.readFile(fullPath, "utf8");
       const note = JSON.parse(fileData);
-      return note.content;
+      if (typeof note.content === "string" && note.content.trim().startsWith("{")) {
+        try {
+          note.content = JSON.parse(note.content);
+        } catch {
+        }
+      }
+      return { ...note, createdAt: note.createdAt || (note.content?.createdAt ?? null) };
     } catch (err) {
       console.error(`Error reading note at ${notePath}:`, err);
       return null;
     }
   });
-  ipcMain.on("save-note-content", async (event, { id, path: notePath, content }) => {
+  ipcMain.handle("save-note-content", async (event, { id, path: notePath, content }) => {
     await ensureNotesDirExists();
     const fullPath = path.join(notesDir, notePath);
     try {
       const fileData = await fs.readFile(fullPath, "utf8");
       const note = JSON.parse(fileData);
-      note.content = content;
+      if (note.type === "canvas") {
+        try {
+          note.content = typeof content === "string" ? JSON.parse(content) : content;
+        } catch {
+          note.content = content;
+        }
+      } else {
+        note.content = typeof content === "string" ? content : JSON.stringify(content);
+      }
+      note.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
       await fs.writeFile(fullPath, JSON.stringify(note, null, 2));
+      return { success: true, path: notePath, updatedAt: note.updatedAt };
     } catch (err) {
       console.error(`Error saving note at ${notePath}:`, err);
+      return { success: false, error: err.message };
     }
   });
   ipcMain.handle("update-note-title", async (event, { id, path: oldPath, newTitle, type }) => {
@@ -174,13 +183,24 @@ function createWindow() {
       }
     }
   });
-  ipcMain.handle("create-note", async (event, parentPath = ".") => {
+  ipcMain.handle("create-note", async (event, parentPath = ".", noteName = "New Note") => {
     await ensureNotesDirExists();
     const fullDirPath = path.join(notesDir, parentPath);
+    const safeTitle = (noteName || "New Note").trim();
+    const createdAt = (/* @__PURE__ */ new Date()).toLocaleString([], {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true
+    });
     const newNote = {
       id: crypto.randomUUID(),
-      title: "New Note",
-      content: ""
+      title: safeTitle,
+      content: { createdAt, content: "" },
+      type: "note",
+      createdAt
     };
     const fileName = `${newNote.id}.json`;
     const filePath = path.join(fullDirPath, fileName);
@@ -188,7 +208,7 @@ function createWindow() {
       await fs.mkdir(fullDirPath, { recursive: true });
       await fs.writeFile(filePath, JSON.stringify(newNote, null, 2));
       const relativePath = path.relative(notesDir, filePath);
-      return { id: newNote.id, title: newNote.title, type: "note", path: relativePath };
+      return { id: newNote.id, title: newNote.title, type: "note", path: relativePath, createdAt };
     } catch (err) {
       console.error("Error creating new note:", err);
       return null;
@@ -216,29 +236,30 @@ function createWindow() {
     const fullPath = path.join(notesDir, parentPath || "", folderName);
     try {
       await fs.mkdir(fullPath, { recursive: true });
-      return {
-        success: true,
-        path: fullPath,
-        message: `Folder '${folderName}' created successfully.`
-      };
+      return { success: true, path: fullPath, message: `Folder '${folderName}' created successfully.` };
     } catch (err) {
       console.error(`Error creating folder ${fullPath}:`, err);
-      return {
-        success: false,
-        error: `Failed to create folder: ${err.code === "EEXIST" ? "Folder already exists." : err.message}`
-      };
+      return { success: false, error: `Failed to create folder: ${err.message}` };
     }
   });
-  ipcMain.handle("create-canvas", async (event, parentPath = ".") => {
+  ipcMain.handle("create-canvas", async (event, parentPath = ".", canvasName = "New Canvas") => {
     await ensureNotesDirExists();
     const fullDirPath = path.join(notesDir, parentPath);
+    const safeTitle = (canvasName || "New Canvas").trim();
+    const createdAt = (/* @__PURE__ */ new Date()).toLocaleString([], {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true
+    });
     const newCanvas = {
       id: crypto.randomUUID(),
-      title: "New Canvas",
+      title: safeTitle,
       type: "canvas",
-      // <-- NEW TYPE
-      content: "[]"
-      // <-- Excalidraw's empty state
+      createdAt,
+      content: JSON.stringify({ store: {}, createdAt })
     };
     const fileName = `${newCanvas.id}.canvas.json`;
     const filePath = path.join(fullDirPath, fileName);
@@ -246,7 +267,7 @@ function createWindow() {
       await fs.mkdir(fullDirPath, { recursive: true });
       await fs.writeFile(filePath, JSON.stringify(newCanvas, null, 2));
       const relativePath = path.relative(notesDir, filePath);
-      return { id: newCanvas.id, title: newCanvas.title, type: "canvas", path: relativePath };
+      return { success: true, newItem: { id: newCanvas.id, title: newCanvas.title, type: "canvas", path: relativePath, createdAt } };
     } catch (err) {
       console.error("Error creating new canvas:", err);
       return null;

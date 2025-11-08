@@ -1,313 +1,355 @@
-import React, { useState, useEffect } from 'react';
-// 💡 FIX: Renamed Sidebar import to match the FileSidebar component
-import { FileSidebar } from './components/FileSidebar'; 
+import React, { useState, useEffect, useRef } from 'react';
+import { FileSidebar } from './components/FileSidebar';
 import { Editor } from './components/Editor';
 import { WindowControls } from './components/WindowControl';
-// 💡 NEW: Import the NavigationBar
 import { NavigationBar } from './components/NavigationBar';
-// 💡 NEW: Import the Settings Panel
 import { SettingsPanel } from './components/SettingsPanel';
-// 💡 1. IMPORT THE NEW PROFILE PANEL
 import { ProfilePanel } from './components/ProfilePanel';
-// ⬇️ --- (Step 1) --- IMPORT THE DRAWING SPACE ---
 import { DrawingSpace } from './components/DrawingSpace';
-// ⬇️ --- FIX 1: IMPORT EXCALIDRAW EDITOR --- ⬇️
-import { ExcalidrawEditor } from './components/ExcalidrawEditor';
-
-
-// Helper function to find a node by its ID in the nested notes array
-const findNodeById = (nodes, id) => {
-    for (const node of nodes) {
-        if (node.id === id) return node;
-        if (node.children) {
-            const found = findNodeById(node.children, id);
-            if (found) return found;
-        }
-    }
-    return null;
-};
-
 
 function App() {
-    // notes is now a nested array (the tree structure)
-    const [notes, setNotes] = useState([]); 
-    // selectedNote stores the full object: { id, title, type, path, children? }
-    const [selectedNote, setSelectedNote] = useState(null); 
-    const [currentNoteContent, setCurrentNoteContent] = useState('');
-    
-    // 💡 NEW GLOBAL STATE FOR UI
-    // ⬇️ --- FIX 2: CHANGED 'null' to null --- ⬇️
-    const [activePanel, setActivePanel] = useState(null); // 'files', 'search', 'settings', or 'profile' (added profile)
-    const [theme, setTheme] = useState('dark'); // 'dark' or 'light'
-    const [notebookFont, setNotebookFont] = useState('sans'); // 'sans', 'serif', 'monospace'
-    const [language, setLanguage] = useState('en'); // 'en', 'es', etc.
+  const canvasCache = useRef({});
+  const hasLoadedContent = useRef(false);
+  const prevSelectedNote = useRef(null);
 
+  const [notes, setNotes] = useState([]);
+  const [selectedNote, setSelectedNote] = useState(null);
+  const [currentNoteContent, setCurrentNoteContent] = useState('');
+  const [saveStatus, setSaveStatus] = useState(null);
 
-    // 1. Load the tree structure on app start
-    useEffect(() => {
-        loadNotesList();
-    }, []);
+  const [activePanel, setActivePanel] = useState(null);
+  const [theme, setTheme] = useState('dark');
+  const [notebookFont, setNotebookFont] = useState('sans');
+  const [language, setLanguage] = useState('en');
 
-    // 2. Load the content of the selected note
-    useEffect(() => {
-        // ⬇️ --- FIX 3: ADDED 'canvas' TO CONTENT LOADER --- ⬇️
-        if (selectedNote && (selectedNote.type === 'note' || selectedNote.type === 'canvas')) {
-            // Use the note's path to fetch content
-            window.electronAPI.getNoteContent(selectedNote.path) 
-                .then(content => setCurrentNoteContent(content || ''));
+  const [country, setCountry] = useState(() => localStorage.getItem('userCountry') || 'Asia/Kolkata');
+
+  // 🧩 Helper: recursively find node by ID
+  const findNodeById = (nodes, id) => {
+    for (const node of nodes) {
+      if (node.id === id) return node;
+      if (node.children) {
+        const found = findNodeById(node.children, id);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  // 🧩 Ensure Notes Exist and Load
+  const loadNotesList = async () => {
+    try {
+      const newNotes = await window.electronAPI.getNotesList();
+      setNotes(newNotes || []);
+
+      if (selectedNote) {
+        const reSelectedNote = findNodeById(newNotes, selectedNote.id);
+        setSelectedNote(reSelectedNote || null);
+      }
+    } catch (err) {
+      console.error('Failed to load notes list:', err);
+      setNotes([]);
+    }
+  };
+
+  useEffect(() => {
+    window.electronAPI.getNotesList().then(setNotes).catch(err => {
+      console.error('getNotesList failed:', err);
+      setNotes([]);
+    });
+  }, []);
+
+  // 🧩 Load content (notes/canvas)
+  useEffect(() => {
+    if (!selectedNote) {
+      setCurrentNoteContent('');
+      hasLoadedContent.current = false;
+      return;
+    }
+
+    const loadContent = async () => {
+      try {
+        if (selectedNote.type === 'canvas') {
+          hasLoadedContent.current = false;
+          const cached = canvasCache.current[selectedNote.id];
+          if (cached) {
+            setCurrentNoteContent(structuredClone(cached));
+            hasLoadedContent.current = true;
+            return;
+          }
+        }
+
+        const noteData = await window.electronAPI.getNoteContent(selectedNote.path);
+        if (!noteData) {
+          setCurrentNoteContent('');
+          hasLoadedContent.current = true;
+          return;
+        }
+
+        const createdAtFromTop = noteData.createdAt;
+        const contentField = noteData.content !== undefined ? noteData.content : noteData;
+        const createdAtFromContent = contentField && typeof contentField === 'object' ? contentField.createdAt : undefined;
+        const resolvedCreatedAt = createdAtFromTop || createdAtFromContent || selectedNote?.createdAt;
+
+        setSelectedNote(prev => ({
+          ...prev,
+          createdAt: resolvedCreatedAt,
+          title: noteData.title || prev?.title,
+        }));
+
+        let resolvedContent = '';
+        if (contentField && typeof contentField === 'object') {
+          if (contentField.store || contentField.document || contentField.pages) {
+            resolvedContent = contentField;
+          } else if (contentField.content !== undefined) {
+            resolvedContent = contentField.content;
+          } else {
+            resolvedContent = contentField;
+          }
         } else {
-            setCurrentNoteContent(''); // Clear editor for folders or nothing selected
+          resolvedContent = contentField || '';
         }
-    }, [selectedNote]);
-    
-    // 💡 NEW: This effect manages the 'dark' class on the <html> tag
-    // This controls Tailwind's darkMode: 'class' functionality.
-    useEffect(() => {
-        const root = window.document.documentElement;
-        if (theme === 'dark') {
-            root.classList.add('dark');
-        } else {
-            root.classList.remove('dark');
-        }
-    }, [theme]); // Re-run this effect whenever 'theme' changes
 
-    // 💡 IMPORTANT: loadNotesList must return the Promise so we can chain it.
-    const loadNotesList = () => {
-        // Fetches the entire nested structure
-        return window.electronAPI.getNotesList().then(newNotes => {
-            setNotes(newNotes);
-            
-            // Re-select the previously selected item if it still exists in the new tree
-            if (selectedNote) {
-                const reSelectedNote = findNodeById(newNotes, selectedNote.id);
-                if (reSelectedNote) {
-                    // Important: Update selectedNote with the new object reference/paths
-                    setSelectedNote(reSelectedNote); 
-                } else {
-                    setSelectedNote(null);
-                }
-            }
+        setCurrentNoteContent(resolvedContent);
+        hasLoadedContent.current = true;
+      } catch (err) {
+        console.error(`Error loading content for ${selectedNote?.path}:`, err);
+        setCurrentNoteContent('');
+        hasLoadedContent.current = true;
+      }
+    };
+
+    loadContent();
+  }, [selectedNote]);
+
+  // 🎨 Theme + font sync
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle('dark', theme === 'dark');
+    root.classList.remove('font-sans', 'font-serif', 'font-monospace');
+    root.classList.add(`font-${notebookFont}`);
+  }, [theme, notebookFont]);
+
+  // 💾 Save logic — ✅ FIXED
+  const saveNote = async (contentToSave, noteToSave) => {
+    const note = noteToSave || selectedNote;
+    if (!note) return;
+
+    // ✅ Always serialize complex content safely
+    const finalContent =
+      typeof contentToSave === 'string'
+        ? contentToSave
+        : JSON.stringify(contentToSave ?? currentNoteContent);
+
+    const shouldSave = hasLoadedContent.current || contentToSave !== undefined;
+
+    if (note.type === 'note' || note.type === 'canvas') {
+      if (shouldSave) {
+        try {
+          console.log('[SAVE]', note.title, { path: note.path, len: finalContent?.length });
+          const result = await window.electronAPI.saveNoteContent({
+            id: note.id,
+            path: note.path,
+            content: finalContent,
+          });
+
+          if (result?.success) {
+            setSaveStatus({ type: 'success', message: `💾 Auto-saved "${note.title}"` });
+          } else {
+            setSaveStatus({ type: 'error', message: `⚠️ Save failed: ${result?.error || 'Unknown error'}` });
+          }
+        } catch (err) {
+          console.error('Save failed:', err);
+          setSaveStatus({ type: 'error', message: '⚠️ Save failed unexpectedly' });
+        } finally {
+          setTimeout(() => setSaveStatus(null), 2500);
+        }
+      }
+    }
+  };
+
+  // 🧩 Auto-save before switching
+  const handleItemSelect = async (item) => {
+    if (prevSelectedNote.current && hasLoadedContent.current) {
+      await saveNote(undefined, prevSelectedNote.current);
+    }
+    prevSelectedNote.current = item;
+    setSelectedNote(item);
+  };
+
+  // --- Creation handlers ---
+  const createFolder = (parentPath, folderName, onComplete) => {
+    if (!folderName?.trim()) return onComplete?.();
+    window.electronAPI.createFolder(parentPath, folderName.trim())
+      .then(result => {
+        if (result?.success) return loadNotesList();
+        alert(`Creation Failed: ${result?.error || 'Unknown error'}`);
+      })
+      .finally(onComplete);
+  };
+
+  const createNote = async (parentPath, noteName, onComplete) => {
+    if (!noteName?.trim()) return onComplete?.();
+    const tz = country || 'Asia/Kolkata';
+    const createdAt = new Date().toLocaleString([], {
+      timeZone: tz,
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    try {
+      const result = await window.electronAPI.createNote(parentPath, noteName.trim());
+      if (result) {
+        const noteWithTime = { ...result, createdAt };
+        await window.electronAPI.saveNoteContent({
+          id: noteWithTime.id,
+          path: noteWithTime.path,
+          content: JSON.stringify({ createdAt }),
         });
-    };
+        await loadNotesList();
+        setSelectedNote(noteWithTime);
+      }
+    } catch (err) {
+      console.error('createNote failed:', err);
+    } finally {
+      onComplete?.();
+    }
+  };
 
-    const handleItemSelect = (item) => {
-        setSelectedNote(item);
-    };
-    
-    // --- Note/Folder Actions (FIXED ASYNC) ---
-
-    // 💡 FIX: Accepts a third argument, `onComplete`, which is the cleanup function 
-    // from the Sidebar/NewFolderInput.
-    const handleFolderCreation = (parentPath, folderName, onComplete) => {
-        if (folderName && folderName.trim() !== '') {
-            // 1. Call Electron API and check the returned promise
-            window.electronAPI.createFolder(parentPath, folderName)
-                .then(result => {
-                    // Assuming the Main Process returns { success: boolean, error?: string }
-                    if (result && result.success) {
-                        // 2. ONLY if successful, reload the list (which returns a Promise)
-                        return loadNotesList(); 
-                    } else {
-                        // Handle Main Process error (e.g., Folder already exists)
-                        alert(`Creation Failed: ${result ? result.error : 'Unknown error'}`);
-                        // 3. Close the input box even on failure
-                        if (onComplete) onComplete(); 
-                        // Stop the promise chain here
-                        throw new Error('Folder creation failed in Main Process.');
-                    }
-                })
-                .then(() => {
-                    // 4. Success: Notify the Sidebar to close the input after reload is complete
-                    if (onComplete) onComplete();
-                })
-                .catch(error => {
-                    // Catch network/API errors or the error thrown above
-                    console.error("Folder creation failed:", error);
-                    // Ensure cleanup happens if an error occurred before step 4
-                    if (error.message.includes('Main Process') && onComplete) {
-                        // This path is already handled above, but here for robustness.
-                    } else if (onComplete) {
-                        onComplete();
-                    }
-                });
-        } else {
-            // If name is empty, close the input immediately
-            if (onComplete) onComplete(); 
+  const createCanvas = (parentPath, canvasName, onComplete) => {
+    if (!canvasName?.trim()) return onComplete?.();
+    window.electronAPI.createCanvas(parentPath, canvasName.trim())
+      .then(result => {
+        if (result?.success && result.newItem) {
+          return loadNotesList().then(() => setSelectedNote(result.newItem));
         }
-    };
-    
-    // 💡 The prop now expects the new 3-argument signature.
-    const createFolder = handleFolderCreation;
+      })
+      .finally(onComplete);
+  };
 
+  // --- Deletion ---
+  const deleteItem = async (itemToDelete) => {
+    if (!itemToDelete) return;
+    const confirmDelete = window.confirm(`Delete "${itemToDelete.title}" permanently?`);
+    if (!confirmDelete) return;
+    await window.electronAPI.deleteNote(itemToDelete.path, itemToDelete.type);
+    if (selectedNote?.id === itemToDelete.id) setSelectedNote(null);
+    loadNotesList();
+  };
 
-    const createNote = (parentPath = '.') => {
-        window.electronAPI.createNote(parentPath).then(newNote => {
-            if (newNote) {
-                // Refresh the tree structure to reflect the file change
-                loadNotesList(); 
-                setSelectedNote(newNote);
-            }
-        });
-    };
+  const deleteMultipleItems = async (itemsToDelete) => {
+    if (!itemsToDelete?.length) return;
+    const confirmDelete = window.confirm(`Delete ${itemsToDelete.length} selected items?`);
+    if (!confirmDelete) return;
+    await Promise.all(itemsToDelete.map(item =>
+      window.electronAPI.deleteNote(item.path, item.type)
+    ));
+    if (itemsToDelete.some(i => i.id === selectedNote?.id)) setSelectedNote(null);
+    loadNotesList();
+  };
 
-    // ⬇️ --- FIX 4: ADDED CREATECANVAS FUNCTION --- ⬇️
-    const createCanvas = (parentPath = '.') => {
-        window.electronAPI.createCanvas(parentPath).then(newCanvas => {
-            if (newCanvas) {
-                // Refresh the tree structure to reflect the file change
-                loadNotesList(); 
-                setSelectedNote(newCanvas);
-            }
-        });
-    };
-    
-    // This function is now async and waits for the API call
-    const deleteItem = async (itemToDelete) => {
-        if (!itemToDelete) return; 
+  const updateItemTitle = async (item, newTitle) => {
+    if (!newTitle || item.title === newTitle) return;
+    await window.electronAPI.updateNoteTitle({
+      id: item.id,
+      path: item.path,
+      newTitle,
+      type: item.type,
+    });
+    loadNotesList();
+  };
 
-        let confirmed = true; 
-        if (itemToDelete.type === 'folder') {
-            confirmed = window.confirm(`Are you sure you want to delete the folder "${itemToDelete.title}" and all its contents?`);
-        }
+  // --- UI ---
+  return (
+    <div className="flex flex-col h-screen relative bg-gray-100 text-gray-900 dark:bg-zinc-900 dark:text-white">
+      <header className="titlebar flex justify-between items-center p-3 pl-4 bg-gray-200/80 border-b border-gray-300/50 dark:bg-zinc-800/80 dark:border-zinc-700/50">
+        <h1 className="text-xl font-extrabold text-blue-600 dark:text-blue-400 tracking-wider">Notex</h1>
+        <WindowControls />
+      </header>
 
-        if (!confirmed) {
-            return; 
-        }
-        
-        // Wait for the deletion to finish
-        await window.electronAPI.deleteNote(itemToDelete.path, itemToDelete.type);
-        
-        if (selectedNote && selectedNote.id === itemToDelete.id) {
-            setSelectedNote(null);
-        }
-        
-        loadNotesList(); 
-    };
+      <main className="flex flex-1 overflow-hidden">
+        <NavigationBar activePanel={activePanel} onPanelClick={setActivePanel} />
 
-    const saveNote = () => {
-        // ⬇️ --- FIX 5: UPDATED SAVE FUNCTION --- ⬇️
-        // This now saves both notes and canvases
-        if (selectedNote && (selectedNote.type === 'note' || selectedNote.type === 'canvas')) {
-            window.electronAPI.saveNoteContent({ 
-                id: selectedNote.id, 
-                path: selectedNote.path, 
-                content: currentNoteContent 
-            });
-        }
-    };
-
-    // This function is now async and waits for the API call
-    const updateItemTitle = async (itemToUpdate, newTitle) => {
-        if (!newTitle || itemToUpdate.title === newTitle) return;
-        
-        // Wait for the rename to finish
-        await window.electronAPI.updateNoteTitle({ 
-            id: itemToUpdate.id, 
-            path: itemToUpdate.path, 
-            newTitle, 
-            type: itemToUpdate.type 
-        });
-        
-        // Now reload the list
-        loadNotesList();
-        
-        if (selectedNote && selectedNote.id === itemToUpdate.id) {
-            setSelectedNote(prev => ({ ...prev, title: newTitle }));
-        }
-    };
-
-
-    return (
-        // 💡 1. UPDATED Root Div for light/dark mode
-        // Removed the ternary and now rely on the <html> class.
-        <div className="flex flex-col h-screen relative bg-gray-100 text-gray-900 dark:bg-zinc-900 dark:text-white">
-            
-            {/* 💡 2. UPDATED Header for light/dark mode */}
-            <header className="titlebar flex justify-between items-center p-3 pl-4 
-                          bg-gray-200/80 border-b border-gray-300/50 
-                          dark:bg-zinc-800/80 dark:border-zinc-700/50">
-                {/* 💡 3. UPDATED H1 for light/dark mode */}
-                <h1 className="text-xl font-extrabold text-blue-600 dark:text-blue-400 tracking-wider">Notex</h1>
-                <WindowControls />
-            </header>
-
-            {/* 2. Main Content Area */}
-            <main className="flex flex-1 overflow-hidden">
-                
-                {/* Navigation Bar (Fixed Left) */}
-                <NavigationBar 
-                    activePanel={activePanel}
-                    onPanelClick={setActivePanel} // Pass the setter to toggle panels
-                />
-                
-                {/* Conditional Side Panels: Container manages opening/closing animation */}
-                <div className={`
-                    flex-shrink-0 transition-all duration-300 ease-in-out
-                    ${/* 'profile' is correctly removed for the pop-up logic */ ''}
-                    ${activePanel === 'files' || activePanel === 'settings' ? 'w-1/3 max-w-xs' : 'w-0 overflow-hidden'}
-                    `}>
-                    
-                    {/* File Sidebar */}
-                    {activePanel === 'files' && (
-                        <FileSidebar
-                            notes={notes}
-                            selectedNote={selectedNote}
-                            onItemSelect={handleItemSelect}
-                            onCreateNote={createNote}
-                            onCreateFolder={createFolder} 
-                            onCreateCanvas={createCanvas} // <-- ⬇️ --- FIX 6: PASS PROP --- ⬇️
-                            onUpdateTitle={updateItemTitle}
-                            onDeleteItem={deleteItem}
-                        />
-                    )}
-                    
-                    {/* Settings Panel */}
-                    {activePanel === 'settings' && (
-                        <SettingsPanel 
-                            theme={theme}
-                            setTheme={setTheme}
-                            notebookFont={notebookFont}
-                            setNotebookFont={setNotebookFont}
-                            language={language}
-                            setLanguage={setLanguage}
-                        />
-                    )}
-                    
-                </div>
-                
-                {/* ⬇️ --- FIX 7: REPLACED RENDER LOGIC --- ⬇️ */}
-                {/* Main Content Area: Switches between tldraw, Excalidraw, and Tiptap */}
-                {activePanel === 'draw' ? (
-                    // 1. If 'draw' panel is active, show tldraw
-                    <DrawingSpace theme={theme} />
-
-                ) : (selectedNote && selectedNote.type === 'canvas') ? (
-                    // 2. If a canvas file is selected, show Excalidraw
-                    <ExcalidrawEditor
-                      content={currentNoteContent}
-                      onChange={setCurrentNoteContent}
-                      onSave={saveNote}
-                      onDelete={selectedNote ? () => deleteItem(selectedNote) : null}
-                      theme={theme}
-                    />
-                
-                ) : (
-                    // 3. Otherwise, show the Tiptap editor (for notes or no selection)
-                    <Editor
-                        content={currentNoteContent}
-                        onChange={setCurrentNoteContent}
-                        onSave={saveNote}
-                        onDelete={selectedNote ? () => deleteItem(selectedNote) : null} 
-                        isNoteSelected={selectedNote && selectedNote.type === 'note'} 
-                    />
-                )}
-                {/* ⬆️ --- END OF FIX --- ⬆️ */}
-            </main>
-
-            {/* RENDER THE PROFILE PANEL HERE (outside 'main') */}
-            {activePanel === 'profile' && <ProfilePanel />}
+        <div className={`flex-shrink-0 transition-all duration-300 ease-in-out ${activePanel === 'files' || activePanel === 'settings' ? 'w-1/3 max-w-xs' : 'w-0 overflow-hidden'}`}>
+          {activePanel === 'files' && (
+            <FileSidebar
+              notes={notes}
+              selectedNote={selectedNote}
+              onItemSelect={handleItemSelect}
+              onCreateNote={createNote}
+              onCreateFolder={createFolder}
+              onCreateCanvas={createCanvas}
+              onUpdateTitle={updateItemTitle}
+              onDeleteItem={deleteItem}
+              onDeleteMultipleItems={deleteMultipleItems}
+            />
+          )}
+          {activePanel === 'settings' && (
+            <SettingsPanel
+              theme={theme}
+              setTheme={setTheme}
+              notebookFont={notebookFont}
+              setNotebookFont={setNotebookFont}
+              language={language}
+              setLanguage={setLanguage}
+              country={country}
+              setCountry={(val) => {
+                setCountry(val);
+                localStorage.setItem('userCountry', val);
+              }}
+            />
+          )}
         </div>
-    );
+
+        {(selectedNote && selectedNote.type === 'canvas') ? (
+          <DrawingSpace
+            key={selectedNote.id}
+            content={currentNoteContent}
+            onChange={(snapshot) => {
+              setCurrentNoteContent(snapshot);
+              if (selectedNote?.type === 'canvas') {
+                canvasCache.current[selectedNote.id] = snapshot;
+              }
+              saveNote(snapshot);
+            }}
+            onSave={saveNote}
+            onDelete={() => deleteItem(selectedNote)}
+            theme={theme}
+          />
+        ) : activePanel === 'draw' ? (
+          <DrawingSpace key="scratchpad" theme={theme} />
+        ) : (
+          <Editor
+            content={currentNoteContent}
+            onChange={(newContent) => {
+              setCurrentNoteContent(newContent);
+              saveNote(newContent);
+            }}
+            onSave={saveNote}
+            onDelete={() => deleteItem(selectedNote)}
+            isNoteSelected={selectedNote?.type === 'note'}
+            selectedNote={selectedNote}
+            notebookFont={notebookFont}
+          />
+        )}
+      </main>
+
+      {activePanel === 'profile' && <ProfilePanel />}
+
+      {saveStatus && (
+        <div
+          className={`fixed bottom-6 right-6 px-4 py-2 rounded-2xl shadow-lg text-sm font-semibold backdrop-blur-md transition-all duration-300 
+          ${saveStatus.type === 'success' ? 'bg-green-500/80 text-white' : 'bg-red-500/80 text-white'}`}
+        >
+          {saveStatus.message}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default App;
