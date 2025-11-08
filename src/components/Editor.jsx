@@ -1,27 +1,11 @@
 import React, { useCallback } from 'react';
-
 import { useEditor, EditorContent } from '@tiptap/react';
-
-// Import the necessary extensions
-
 import StarterKit from '@tiptap/starter-kit';
-
 import Underline from '@tiptap/extension-underline';
-
 import TextStyle from '@tiptap/extension-text-style';
-
 import FontFamily from '@tiptap/extension-font-family';
 
-// NEW: Import the Tldraw Extension
-
-// import { TldrawExtension } from '../extensions/TldrawExtension';
-
-
-
-
-
 // --- Professional Icons for the MenuBar (omitted for brevity) ---
-
 const toolbarIcons = {
 
     bold: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 4h8a4 4 0 014 4 4 4 0 01-4 4H6z" /><path d="M6 12h9a4 4 0 014 4 4 4 0 01-4 4H6z" /></svg>,
@@ -251,23 +235,6 @@ const MenuBar = ({ editor, onSave, onDelete, isNoteSelected }) => {
                 <div className="w-px h-6 bg-gray-300 dark:bg-zinc-700 mx-1"></div>
 
 
-
-                {/* Insert Tldraw Sketch Button */}
-
-                {/* <button
-
-                    onClick={() => editor.chain().focus().insertTldraw().run()}
-
-                    className={buttonClass(editor.isActive('tldraw'))}
-
-                    title="Insert Tldraw Sketch"
-
-                >
-
-                    {toolbarIcons.sketch}
-
-                </button> */}
-
             </div>
 
 
@@ -366,7 +333,6 @@ export function Editor({ content, onChange, onSave, onDelete, isNoteSelected }) 
 
             }),
 
-            // TldrawExtension,
 
         ],
 

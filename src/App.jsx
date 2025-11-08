@@ -9,6 +9,10 @@ import { NavigationBar } from './components/NavigationBar';
 import { SettingsPanel } from './components/SettingsPanel';
 // 💡 1. IMPORT THE NEW PROFILE PANEL
 import { ProfilePanel } from './components/ProfilePanel';
+// ⬇️ --- (Step 1) --- IMPORT THE DRAWING SPACE ---
+import { DrawingSpace } from './components/DrawingSpace';
+// ⬇️ --- FIX 1: IMPORT EXCALIDRAW EDITOR --- ⬇️
+import { ExcalidrawEditor } from './components/ExcalidrawEditor';
 
 
 // Helper function to find a node by its ID in the nested notes array
@@ -32,7 +36,7 @@ function App() {
     const [currentNoteContent, setCurrentNoteContent] = useState('');
     
     // 💡 NEW GLOBAL STATE FOR UI
-    // 🎯 FIX: Changed initial state from 'files' to null. This starts the sidebar closed.
+    // ⬇️ --- FIX 2: CHANGED 'null' to null --- ⬇️
     const [activePanel, setActivePanel] = useState(null); // 'files', 'search', 'settings', or 'profile' (added profile)
     const [theme, setTheme] = useState('dark'); // 'dark' or 'light'
     const [notebookFont, setNotebookFont] = useState('sans'); // 'sans', 'serif', 'monospace'
@@ -46,8 +50,8 @@ function App() {
 
     // 2. Load the content of the selected note
     useEffect(() => {
-        // Only load content if the selected item is a 'note'
-        if (selectedNote && selectedNote.type === 'note') {
+        // ⬇️ --- FIX 3: ADDED 'canvas' TO CONTENT LOADER --- ⬇️
+        if (selectedNote && (selectedNote.type === 'note' || selectedNote.type === 'canvas')) {
             // Use the note's path to fetch content
             window.electronAPI.getNoteContent(selectedNote.path) 
                 .then(content => setCurrentNoteContent(content || ''));
@@ -145,23 +149,45 @@ function App() {
             }
         });
     };
-    // ... (deleteItem, saveNote, updateItemTitle remain the same as they use loadNotesList())
-    const deleteItem = () => {
-        if (selectedNote) {
-            // For now, let's assume `confirm()` is allowed
-            if (selectedNote.type === 'folder' && !confirm(`Are you sure you want to delete the folder "${selectedNote.title}" and all its contents?`)) {
-                return;
+
+    // ⬇️ --- FIX 4: ADDED CREATECANVAS FUNCTION --- ⬇️
+    const createCanvas = (parentPath = '.') => {
+        window.electronAPI.createCanvas(parentPath).then(newCanvas => {
+            if (newCanvas) {
+                // Refresh the tree structure to reflect the file change
+                loadNotesList(); 
+                setSelectedNote(newCanvas);
             }
-            
-            window.electronAPI.deleteNote(selectedNote.path, selectedNote.type);
-            
-            setSelectedNote(null);
-            loadNotesList();
+        });
+    };
+    
+    // This function is now async and waits for the API call
+    const deleteItem = async (itemToDelete) => {
+        if (!itemToDelete) return; 
+
+        let confirmed = true; 
+        if (itemToDelete.type === 'folder') {
+            confirmed = window.confirm(`Are you sure you want to delete the folder "${itemToDelete.title}" and all its contents?`);
         }
+
+        if (!confirmed) {
+            return; 
+        }
+        
+        // Wait for the deletion to finish
+        await window.electronAPI.deleteNote(itemToDelete.path, itemToDelete.type);
+        
+        if (selectedNote && selectedNote.id === itemToDelete.id) {
+            setSelectedNote(null);
+        }
+        
+        loadNotesList(); 
     };
 
     const saveNote = () => {
-        if (selectedNote && selectedNote.type === 'note') {
+        // ⬇️ --- FIX 5: UPDATED SAVE FUNCTION --- ⬇️
+        // This now saves both notes and canvases
+        if (selectedNote && (selectedNote.type === 'note' || selectedNote.type === 'canvas')) {
             window.electronAPI.saveNoteContent({ 
                 id: selectedNote.id, 
                 path: selectedNote.path, 
@@ -170,16 +196,19 @@ function App() {
         }
     };
 
-    const updateItemTitle = (itemToUpdate, newTitle) => {
+    // This function is now async and waits for the API call
+    const updateItemTitle = async (itemToUpdate, newTitle) => {
         if (!newTitle || itemToUpdate.title === newTitle) return;
         
-        window.electronAPI.updateNoteTitle({ 
+        // Wait for the rename to finish
+        await window.electronAPI.updateNoteTitle({ 
             id: itemToUpdate.id, 
             path: itemToUpdate.path, 
             newTitle, 
             type: itemToUpdate.type 
         });
         
+        // Now reload the list
         loadNotesList();
         
         if (selectedNote && selectedNote.id === itemToUpdate.id) {
@@ -226,7 +255,9 @@ function App() {
                             onItemSelect={handleItemSelect}
                             onCreateNote={createNote}
                             onCreateFolder={createFolder} 
+                            onCreateCanvas={createCanvas} // <-- ⬇️ --- FIX 6: PASS PROP --- ⬇️
                             onUpdateTitle={updateItemTitle}
+                            onDeleteItem={deleteItem}
                         />
                     )}
                     
@@ -244,14 +275,33 @@ function App() {
                     
                 </div>
                 
-                {/* Editor: Takes up remaining space */}
-                <Editor
-                    content={currentNoteContent}
-                    onChange={setCurrentNoteContent}
-                    onSave={saveNote}
-                    onDelete={selectedNote ? deleteItem : null} 
-                    isNoteSelected={selectedNote && selectedNote.type === 'note'} 
-                />
+                {/* ⬇️ --- FIX 7: REPLACED RENDER LOGIC --- ⬇️ */}
+                {/* Main Content Area: Switches between tldraw, Excalidraw, and Tiptap */}
+                {activePanel === 'draw' ? (
+                    // 1. If 'draw' panel is active, show tldraw
+                    <DrawingSpace theme={theme} />
+
+                ) : (selectedNote && selectedNote.type === 'canvas') ? (
+                    // 2. If a canvas file is selected, show Excalidraw
+                    <ExcalidrawEditor
+                      content={currentNoteContent}
+                      onChange={setCurrentNoteContent}
+                      onSave={saveNote}
+                      onDelete={selectedNote ? () => deleteItem(selectedNote) : null}
+                      theme={theme}
+                    />
+                
+                ) : (
+                    // 3. Otherwise, show the Tiptap editor (for notes or no selection)
+                    <Editor
+                        content={currentNoteContent}
+                        onChange={setCurrentNoteContent}
+                        onSave={saveNote}
+                        onDelete={selectedNote ? () => deleteItem(selectedNote) : null} 
+                        isNoteSelected={selectedNote && selectedNote.type === 'note'} 
+                    />
+                )}
+                {/* ⬆️ --- END OF FIX --- ⬆️ */}
             </main>
 
             {/* RENDER THE PROFILE PANEL HERE (outside 'main') */}

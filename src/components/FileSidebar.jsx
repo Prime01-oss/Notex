@@ -11,8 +11,9 @@ const icons = {
   openFolder: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 20H4a2 2 0 01-2-2V5a2 2 0 012-2h3.92a2 2 0 011.41.58L10.92 7H19a2 2 0 012 2v9a2 2 0 01-2 2z" /></svg>,
   note: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>,
   search: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>,
-  // 💡 1. Added the trash icon
-  trash: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+  trash: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>,
+  // ⬇️ --- FIX 1: ADDED CANVAS ICON --- ⬇️
+  canvas: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
 };
 
 // Reusable component for the inline folder creation input
@@ -63,7 +64,7 @@ function NewFolderInput({
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onBlur={handleCreate}
+          onBlur={onCancel}
           onKeyDown={handleKeyDown}
           placeholder="New folder name..."
           disabled={isSubmitting}
@@ -84,7 +85,8 @@ function TreeItem({
   onUpdateTitle,
   onCreateFolder,
   onCreateNote,
-  onDeleteItem, // 💡 2. Receive the new delete prop
+  onCreateCanvas, // <-- ⬇️ --- FIX 2: ADDED ONCREATECANVAS PROP --- ⬇️
+  onDeleteItem, 
   depth = 0
 }) {
   const isSelected = selectedNote && selectedNote.id === item.id;
@@ -111,7 +113,8 @@ function TreeItem({
   };
 
   const handleItemClick = () => {
-    if (item.type === 'note') {
+    // ⬇️ --- FIX 3: ALLOW CLICKING ON CANVAS FILES --- ⬇️
+    if (item.type === 'note' || item.type === 'canvas') {
       onItemSelect(item);
     } else {
       setIsExpanded(prev => !prev);
@@ -133,26 +136,25 @@ function TreeItem({
     setIsCreatingNestedFolder(true);
   }
   
-  // 💡 3. Add the delete click handler
+  // ⬇️ --- FIX 4: ADDED HANDLER FOR CANVAS CREATION --- ⬇️
+  const handleCreateCanvas = (e) => {
+    e.stopPropagation();
+    onCreateCanvas(item.path);
+  }
+
   const handleDeleteClick = (e) => {
     e.stopPropagation(); // Stop it from selecting the folder
-    
-    // Show the confirmation pop-up
-    const confirmDelete = window.confirm(
-      `Are you sure you want to delete the folder "${item.title}" and all its contents?`
-    );
-
-    // If user clicks "OK", call the delete function
-    if (confirmDelete) {
-      onDeleteItem(item);
-    }
+    onDeleteItem(item); // Directly call the main delete function
   };
 
   const handleNestedFolderCreation = (parentPath, folderName, onComplete) => {
     onCreateFolder(parentPath, folderName, onComplete);
   }
 
-  const iconToRender = item.type === 'folder' ? (isExpanded || isCreatingNestedFolder ? icons.openFolder : icons.folder) : icons.note;
+  // ⬇️ --- FIX 5: UPDATED ICON LOGIC --- ⬇️
+  const iconToRender = item.type === 'folder' 
+    ? (isExpanded || isCreatingNestedFolder ? icons.openFolder : icons.folder) 
+    : (item.type === 'canvas' ? icons.canvas : icons.note);
 
   return (
     <li className="py-0.5 relative">
@@ -168,7 +170,7 @@ function TreeItem({
                     }`}
       >
 
-        <div className={`flex-shrink-0 flex items-center ${isSelected ? 'text-blue-700 dark:text-white' : 'text-blue-600 dark:text-blue-400'}`}>
+        <div className={`flex-shrink-0 flex items-center ${isSelected ? 'text-blue-700 dark:text-white' : (item.type === 'canvas' ? 'text-purple-600 dark:text-purple-400' : 'text-blue-600 dark:text-blue-400')}`}>
           {iconToRender && <span className="p-1 mr-1">{iconToRender}</span>}
         </div>
 
@@ -199,7 +201,10 @@ function TreeItem({
             <button onClick={handleCreateFolder} className="no-drag p-1 text-gray-500 hover:text-blue-500 dark:text-gray-400 dark:hover:text-blue-500" title="New Folder">
               {icons.folder}
             </button>
-            {/* 💡 4. Add the trash button */}
+            {/* ⬇️ --- FIX 6: ADDED CANVAS BUTTON TO HOVER --- ⬇️ */}
+            <button onClick={handleCreateCanvas} className="no-drag p-1 text-gray-500 hover:text-purple-500 dark:text-gray-400 dark:hover:text-purple-500" title="New Canvas">
+              {icons.canvas}
+            </button>
             <button onClick={handleDeleteClick} className="no-drag p-1 text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-500" title="Delete Folder">
               {icons.trash}
             </button>
@@ -228,7 +233,8 @@ function TreeItem({
               onUpdateTitle={onUpdateTitle}
               onCreateFolder={onCreateFolder}
               onCreateNote={onCreateNote}
-              onDeleteItem={onDeleteItem} // 💡 5. Pass prop down recursively
+              onCreateCanvas={onCreateCanvas} // <-- ⬇️ --- FIX 7: PASS PROP RECURSIVELY --- ⬇️
+              onDeleteItem={onDeleteItem} 
               depth={0}
             />
           ))}
@@ -252,8 +258,12 @@ const filterTree = (nodes, term) => {
         acc.push({ ...node, children: filteredChildren });
       }
     } else {
-      if (nodeMatches) {
-        acc.push({ ...node });
+      // ⬇️ --- FIX 8: UPDATED FILTER LOGIC --- ⬇️
+      // Now it matches notes OR canvases
+      if (node.type === 'note' || node.type === 'canvas') {
+        if (nodeMatches) {
+          acc.push({ ...node });
+        }
       }
     }
     return acc;
@@ -267,8 +277,9 @@ export function FileSidebar({
   onItemSelect,
   onCreateNote,
   onCreateFolder,
+  onCreateCanvas, // <-- ⬇️ --- FIX 9: RECEIVE ONCREATECANVAS PROP --- ⬇️
   onUpdateTitle,
-  onDeleteItem // 💡 6. Receive prop from App.jsx
+  onDeleteItem 
 }) {
   const rootPath = '.';
   const [isCreatingRootFolder, setIsCreatingRootFolder] = useState(false);
@@ -322,7 +333,7 @@ export function FileSidebar({
           + Folder
         </button>
          <button
-          // onClick={handleRootCreateCanvas}
+          onClick={() => onCreateCanvas(rootPath)} // <-- ⬇️ --- FIX 10: HOOKED UP ONCLICK --- ⬇️
           className="no-drag flex-1 px-4 py-2 bg-purple-700 rounded text-white font-bold text-sm transition-colors hover:bg-purple-600 shadow-md"
         >
           + Canvas
@@ -348,7 +359,8 @@ export function FileSidebar({
             onUpdateTitle={onUpdateTitle}
             onCreateFolder={handleCreationFromInput}
             onCreateNote={onCreateNote}
-            onDeleteItem={onDeleteItem} // 💡 7. Pass prop to the first TreeItem map
+            onCreateCanvas={onCreateCanvas} // <-- ⬇️ --- FIX 11: PASS PROP TO TREEITEM --- ⬇️
+            onDeleteItem={onDeleteItem} 
             depth={0}
           />
         ))}

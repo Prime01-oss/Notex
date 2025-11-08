@@ -29,6 +29,20 @@ async function scanNotesDir(currentPath, baseDir) {
         path: relativePath,
         children
       });
+    } else if (entry.isFile() && entry.name.endsWith(".canvas.json")) {
+      try {
+        const fileData = await fs.readFile(fullPath, "utf8");
+        const canvas = JSON.parse(fileData);
+        tree.push({
+          id: canvas.id,
+          title: canvas.title,
+          type: "canvas",
+          // <-- NEW TYPE
+          path: relativePath
+        });
+      } catch (err) {
+        console.error(`Error reading canvas file ${entry.name} at ${relativePath}:`, err);
+      }
     } else if (entry.isFile() && entry.name.endsWith(".json")) {
       try {
         const fileData = await fs.readFile(fullPath, "utf8");
@@ -137,7 +151,7 @@ function createWindow() {
       console.error(`Error saving note at ${notePath}:`, err);
     }
   });
-  ipcMain.on("update-note-title", async (event, { id, path: oldPath, newTitle, type }) => {
+  ipcMain.handle("update-note-title", async (event, { id, path: oldPath, newTitle, type }) => {
     await ensureNotesDirExists();
     const oldFullPath = path.join(notesDir, oldPath);
     newTitle = newTitle.replace(/[^a-zA-Z0-9\s-_.]/g, "").trim() || "Untitled";
@@ -149,7 +163,7 @@ function createWindow() {
       } catch (err) {
         console.error(`Error renaming folder ${oldPath}:`, err);
       }
-    } else if (type === "note") {
+    } else if (type === "note" || type === "canvas") {
       try {
         const fileData = await fs.readFile(oldFullPath, "utf8");
         const note = JSON.parse(fileData);
@@ -180,7 +194,7 @@ function createWindow() {
       return null;
     }
   });
-  ipcMain.on("delete-note", async (event, itemPath, type) => {
+  ipcMain.handle("delete-note", async (event, itemPath, type) => {
     await ensureNotesDirExists();
     const fullPath = path.join(notesDir, itemPath);
     try {
@@ -215,6 +229,29 @@ function createWindow() {
       };
     }
   });
+  ipcMain.handle("create-canvas", async (event, parentPath = ".") => {
+    await ensureNotesDirExists();
+    const fullDirPath = path.join(notesDir, parentPath);
+    const newCanvas = {
+      id: crypto.randomUUID(),
+      title: "New Canvas",
+      type: "canvas",
+      // <-- NEW TYPE
+      content: "[]"
+      // <-- Excalidraw's empty state
+    };
+    const fileName = `${newCanvas.id}.canvas.json`;
+    const filePath = path.join(fullDirPath, fileName);
+    try {
+      await fs.mkdir(fullDirPath, { recursive: true });
+      await fs.writeFile(filePath, JSON.stringify(newCanvas, null, 2));
+      const relativePath = path.relative(notesDir, filePath);
+      return { id: newCanvas.id, title: newCanvas.title, type: "canvas", path: relativePath };
+    } catch (err) {
+      console.error("Error creating new canvas:", err);
+      return null;
+    }
+  });
   ipcMain.handle("load-reminders", async () => {
     try {
       const data = await fs.readFile(remindersFilePath, "utf8");
@@ -235,14 +272,14 @@ function createWindow() {
   });
 }
 app.on("ready", () => {
+  session.defaultSession.clearCache();
   if (!app.isPackaged) {
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
       callback({
         responseHeaders: {
           ...details.responseHeaders,
-          // RELAXED CSP to allow Tldraw to function in the Renderer process
           "Content-Security-Policy": [
-            "default-src 'self' 'unsafe-eval' blob: data:; script-src 'self' http://localhost:5173 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' blob: data:; img-src 'self' data: blob:;"
+            "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: http://localhost:5173 ws://localhost:5173 https://cdn.tldraw.com https://unpkg.com https://esm.sh; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:5173 https://esm.sh https://unpkg.com; style-src 'self' 'unsafe-inline' blob: data: https://unpkg.com https://esm.sh; font-src 'self' data: blob: https://cdn.tldraw.com https://unpkg.com https://esm.sh; img-src 'self' data: blob: https://cdn.tldraw.com https://unpkg.com https://esm.sh; connect-src 'self' http://localhost:5173 ws://localhost:5173 https://cdn.tldraw.com https://unpkg.com https://esm.sh;"
           ]
         }
       });

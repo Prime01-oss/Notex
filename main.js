@@ -38,7 +38,23 @@ async function scanNotesDir(currentPath, baseDir) {
                 path: relativePath,
                 children: children
             });
-        } else if (entry.isFile() && entry.name.endsWith('.json')) {
+        
+        // ⬇️ --- FILE SCANNING LOGIC --- ⬇️
+        } else if (entry.isFile() && entry.name.endsWith('.canvas.json')) {
+            try {
+                const fileData = await fs.readFile(fullPath, 'utf8');
+                const canvas = JSON.parse(fileData);
+
+                tree.push({
+                    id: canvas.id,
+                    title: canvas.title,
+                    type: 'canvas', // <-- NEW TYPE
+                    path: relativePath,
+                });
+            } catch (err) {
+                console.error(`Error reading canvas file ${entry.name} at ${relativePath}:`, err);
+            }
+        } else if (entry.isFile() && entry.name.endsWith('.json')) { // <-- NOTE LOGIC MOVED HERE
             try {
                 const fileData = await fs.readFile(fullPath, 'utf8');
                 const note = JSON.parse(fileData);
@@ -53,6 +69,8 @@ async function scanNotesDir(currentPath, baseDir) {
                 console.error(`Error reading note file ${entry.name} at ${relativePath}:`, err);
             }
         }
+        // ⬆️ --- END OF FILE SCANNING LOGIC --- ⬆️
+
     }
     return tree.sort((a, b) => {
         // Sort folders before notes, then alphabetically
@@ -177,7 +195,8 @@ function createWindow() {
     });
 
     // 4. Update Item Title (for notes and folders)
-    ipcMain.on('update-note-title', async (event, { id, path: oldPath, newTitle, type }) => {
+    // ⬇️ --- FIX 2: CHANGED 'on' TO 'handle' --- ⬇️
+    ipcMain.handle('update-note-title', async (event, { id, path: oldPath, newTitle, type }) => {
         await ensureNotesDirExists();
         const oldFullPath = path.join(notesDir, oldPath);
 
@@ -195,7 +214,8 @@ function createWindow() {
             } catch (err) {
                 console.error(`Error renaming folder ${oldPath}:`, err);
             }
-        } else if (type === 'note') {
+        // ⬇️ --- FIX 1 (Continued): ADDED 'canvas' TYPE TO TITLE UPDATE --- ⬇️
+        } else if (type === 'note' || type === 'canvas') {
             // A note's title is stored inside its JSON file
             try {
                 const fileData = await fs.readFile(oldFullPath, 'utf8');
@@ -236,7 +256,7 @@ function createWindow() {
     });
 
     // 6. Delete Note/Folder (uses path and type)
-    ipcMain.on('delete-note', async (event, itemPath, type) => {
+    ipcMain.handle('delete-note', async (event, itemPath, type) => {
         await ensureNotesDirExists();
         const fullPath = path.join(notesDir, itemPath); // Use full path
         try {
@@ -248,7 +268,7 @@ function createWindow() {
                 await fs.unlink(fullPath);
             }
         } catch (err) {
-            console.error(`Error deleting item at ${itemPath}:`, err);
+                console.error(`Error deleting item at ${itemPath}:`, err);
         }
     });
 
@@ -293,6 +313,37 @@ function createWindow() {
             };
         }
     });
+    // main.js
+
+    // 8. NEW: Create Canvas
+    ipcMain.handle('create-canvas', async (event, parentPath = '.') => {
+        await ensureNotesDirExists();
+        const fullDirPath = path.join(notesDir, parentPath); // Full folder path
+
+        const newCanvas = {
+            id: crypto.randomUUID(),
+            title: 'New Canvas',
+            type: 'canvas', // <-- NEW TYPE
+            content: '[]' // <-- Excalidraw's empty state
+        };
+        const fileName = `${newCanvas.id}.canvas.json`; // <-- NEW FILE EXTENSION
+        const filePath = path.join(fullDirPath, fileName);
+
+        try {
+            await fs.mkdir(fullDirPath, { recursive: true }); // Ensure path exists
+            await fs.writeFile(filePath, JSON.stringify(newCanvas, null, 2));
+
+            const relativePath = path.relative(notesDir, filePath);
+
+            // Return the new canvas data structure
+            return { id: newCanvas.id, title: newCanvas.title, type: 'canvas', path: relativePath };
+        } catch (err) {
+            console.error('Error creating new canvas:', err);
+            return null;
+        }
+    });
+
+    // ... (your existing 'fs:create-folder' function)
     // --- Reminders Handlers (Unchanged) ---
     ipcMain.handle('load-reminders', async () => {
         try {
@@ -320,29 +371,35 @@ function createWindow() {
 // --- UPDATED APP READY HANDLER (FIXED CSP) ---
 app.on('ready', () => {
 
-    // --- FIX: Relaxed CSP for Tldraw and HMR (Dev Only) ---
-    if (!app.isPackaged) {
-        session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
-            callback({
-                responseHeaders: {
-                    ...details.responseHeaders,
-                    // RELAXED CSP to allow Tldraw to function in the Renderer process
-                    'Content-Security-Policy': [
-                        "default-src 'self' 'unsafe-eval' blob: data:; " + 
-                        "script-src 'self' http://localhost:5173 'unsafe-inline' 'unsafe-eval'; " +
-                        "style-src 'self' 'unsafe-inline' blob: data:; " +
-                        "img-src 'self' data: blob:;"
-                    ]
-                }
-            });
+    // ⬇️ TEMPORARY FIX: FORCE CACHE CLEAR ⬇️
+    session.defaultSession.clearCache();
+
+    // --- FIXED CSP FOR ESM.SH + TLDRAW (Dev Only) ---
+   if (!app.isPackaged) {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+        callback({
+            responseHeaders: {
+                ...details.responseHeaders,
+                'Content-Security-Policy': [
+                    "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: http://localhost:5173 ws://localhost:5173 https://cdn.tldraw.com https://unpkg.com https://esm.sh; " +
+                    "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:5173 https://esm.sh https://unpkg.com; " +
+                    "style-src 'self' 'unsafe-inline' blob: data: https://unpkg.com https://esm.sh; " +
+                    "font-src 'self' data: blob: https://cdn.tldraw.com https://unpkg.com https://esm.sh; " +
+                    "img-src 'self' data: blob: https://cdn.tldraw.com https://unpkg.com https://esm.sh; " +
+                    "connect-src 'self' http://localhost:5173 ws://localhost:5173 https://cdn.tldraw.com https://unpkg.com https://esm.sh;"
+                ]
+            }
         });
-    }
+    });
+}
+
     // --- END FIX ---
 
     ensureNotesDirExists(); // Ensure directory exists on app start
     createWindow();
 });
 
+    // --- END FIX ---
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
