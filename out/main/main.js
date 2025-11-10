@@ -187,20 +187,12 @@ function createWindow() {
     await ensureNotesDirExists();
     const fullDirPath = path.join(notesDir, parentPath);
     const safeTitle = (noteName || "New Note").trim();
-    const createdAt = (/* @__PURE__ */ new Date()).toLocaleString([], {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true
-    });
     const newNote = {
       id: crypto.randomUUID(),
       title: safeTitle,
-      content: { createdAt, content: "" },
-      type: "note",
-      createdAt
+      content: "",
+      // Content will be set by frontend
+      type: "note"
     };
     const fileName = `${newNote.id}.json`;
     const filePath = path.join(fullDirPath, fileName);
@@ -208,7 +200,7 @@ function createWindow() {
       await fs.mkdir(fullDirPath, { recursive: true });
       await fs.writeFile(filePath, JSON.stringify(newNote, null, 2));
       const relativePath = path.relative(notesDir, filePath);
-      return { id: newNote.id, title: newNote.title, type: "note", path: relativePath, createdAt };
+      return { id: newNote.id, title: newNote.title, type: "note", path: relativePath };
     } catch (err) {
       console.error("Error creating new note:", err);
       return null;
@@ -227,7 +219,7 @@ function createWindow() {
       console.error(`Error deleting item at ${itemPath}:`, err);
     }
   });
-  ipcMain.handle("fs:create-folder", async (event, parentPath, folderName) => {
+  ipcMain.handle("create-folder", async (event, parentPath, folderName) => {
     await ensureNotesDirExists();
     folderName = String(folderName || "").replace(/[^a-zA-Z0-9\s-_.]/g, "").trim();
     if (!folderName) {
@@ -301,6 +293,17 @@ app.on("ready", () => {
           ...details.responseHeaders,
           "Content-Security-Policy": [
             "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: http://localhost:5173 ws://localhost:5173 https://cdn.tldraw.com https://unpkg.com https://esm.sh; script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:5173 https://esm.sh https://unpkg.com; style-src 'self' 'unsafe-inline' blob: data: https://unpkg.com https://esm.sh; font-src 'self' data: blob: https://cdn.tldraw.com https://unpkg.com https://esm.sh; img-src 'self' data: blob: https://cdn.tldraw.com https://unpkg.com https://esm.sh; connect-src 'self' http://localhost:5173 ws://localhost:5173 https://cdn.tldraw.com https://unpkg.com https://esm.sh;"
+          ]
+        }
+      });
+    });
+  } else {
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      callback({
+        responseHeaders: {
+          ...details.responseHeaders,
+          "Content-Security-Policy": [
+            "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: https://cdn.tldraw.com https://unpkg.com https://esm.sh; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://esm.sh https://unpkg.com; style-src 'self' 'unsafe-inline' blob: data: https://unpkg.com https://esm.sh; font-src 'self' data: blob: https://cdn.tldraw.com https://unpkg.com https://esm.sh; img-src 'self' data: blob: https://cdn.tldraw.com https://unpkg.com https://esm.sh; connect-src 'self' https://cdn.tldraw.com https://unpkg.com https://esm.sh;"
           ]
         }
       });

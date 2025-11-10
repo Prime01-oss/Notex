@@ -19,7 +19,7 @@ function App() {
 
   const [activePanel, setActivePanel] = useState(null);
   const [theme, setTheme] = useState('dark');
-  const [notebookFont, setNotebookFont] = useState('sans');
+  const [notebookFont, setNotebookFont] = useState('sans-serif');
   const [language, setLanguage] = useState('en');
 
   const [country, setCountry] = useState(() => localStorage.getItem('userCountry') || 'Asia/Kolkata');
@@ -123,12 +123,11 @@ function App() {
   }, [selectedNote]);
 
   // 🎨 Theme + font sync
+  // 🎨 Theme sync
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle('dark', theme === 'dark');
-    root.classList.remove('font-sans', 'font-serif', 'font-monospace');
-    root.classList.add(`font-${notebookFont}`);
-  }, [theme, notebookFont]);
+  }, [theme]);
 
   // 💾 Save logic — ✅ FIXED
   const saveNote = async (contentToSave, noteToSave) => {
@@ -343,7 +342,7 @@ function App() {
       {saveStatus && (
         <div
           className={`fixed bottom-6 right-6 px-4 py-2 rounded-2xl shadow-lg text-sm font-semibold backdrop-blur-md transition-all duration-300 
-          ${saveStatus.type === 'success' ? 'bg-green-500/80 text-white' : 'bg-red-500/80 text-white'}`}
+          ${saveStatus.type === 'success' ? 'bg-green-500/80 text-white' : 'bg-red-500/80 text-white'}`}
         >
           {saveStatus.message}
         </div>

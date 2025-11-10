@@ -23,7 +23,6 @@
     "vite": "^5.3.1"
   },
   "dependencies": {
-    "@excalidraw/excalidraw": "^0.18.0",
     "@tiptap/core": "^2.27.1",
     "@tiptap/extension-font-family": "^2.27.1",
     "@tiptap/extension-text-style": "^2.27.1",

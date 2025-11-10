@@ -229,28 +229,21 @@ function createWindow() {
         }
     });
 
-    // 5. Create Note
+    // --- FIX: BUG #5 ---
+    // 5. Create Note (Simplified)
     ipcMain.handle('create-note', async (event, parentPath = '.', noteName = 'New Note') => {
         await ensureNotesDirExists();
 
         const fullDirPath = path.join(notesDir, parentPath);
         const safeTitle = (noteName || 'New Note').trim();
 
-        const createdAt = new Date().toLocaleString([], {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: true
-        });
+        // --- Timestamp and content logic removed from backend ---
 
         const newNote = {
             id: crypto.randomUUID(),
             title: safeTitle,
-            content: { createdAt, content: '' },
-            type: 'note',
-            createdAt
+            content: '', // Content will be set by frontend
+            type: 'note'
         };
 
         const fileName = `${newNote.id}.json`;
@@ -262,7 +255,8 @@ function createWindow() {
 
             const relativePath = path.relative(notesDir, filePath);
 
-            return { id: newNote.id, title: newNote.title, type: 'note', path: relativePath, createdAt };
+            // --- Return object no longer contains createdAt ---
+            return { id: newNote.id, title: newNote.title, type: 'note', path: relativePath };
         } catch (err) {
             console.error('Error creating new note:', err);
             return null;
@@ -284,8 +278,9 @@ function createWindow() {
         }
     });
 
-    // 7. Create Folder
-    ipcMain.handle('fs:create-folder', async (event, parentPath, folderName) => {
+    // --- FIX: BUG #1 ---
+    // 7. Create Folder (Handler name fixed)
+    ipcMain.handle('create-folder', async (event, parentPath, folderName) => {
         await ensureNotesDirExists();
 
         folderName = String(folderName || '')
@@ -386,6 +381,24 @@ app.on('ready', () => {
                         "font-src 'self' data: blob: https://cdn.tldraw.com https://unpkg.com https://esm.sh; " +
                         "img-src 'self' data: blob: https://cdn.tldraw.com https://unpkg.com https://esm.sh; " +
                         "connect-src 'self' http://localhost:5173 ws://localhost:5173 https://cdn.tldraw.com https://unpkg.com https://esm.sh;"
+                    ]
+                }
+            });
+        });
+    // --- FIX: BUG #2 ---
+    // Added 'else' block for production CSP
+    } else {
+        session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+            callback({
+                responseHeaders: {
+                    ...details.responseHeaders,
+                    'Content-Security-Policy': [
+                        "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: https://cdn.tldraw.com https://unpkg.com https://esm.sh; " +
+                        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://esm.sh https://unpkg.com; " +
+                        "style-src 'self' 'unsafe-inline' blob: data: https://unpkg.com https://esm.sh; " +
+                        "font-src 'self' data: blob: https://cdn.tldraw.com https://unpkg.com https://esm.sh; " +
+                        "img-src 'self' data: blob: https://cdn.tldraw.com https://unpkg.com https://esm.sh; " +
+                        "connect-src 'self' https://cdn.tldraw.com https://unpkg.com https://esm.sh;"
                     ]
                 }
             });
