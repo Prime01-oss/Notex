@@ -143,15 +143,7 @@ function createWindow() {
     try {
       const fileData = await fs.readFile(fullPath, "utf8");
       const note = JSON.parse(fileData);
-      if (note.type === "canvas") {
-        try {
-          note.content = typeof content === "string" ? JSON.parse(content) : content;
-        } catch {
-          note.content = content;
-        }
-      } else {
-        note.content = typeof content === "string" ? content : JSON.stringify(content);
-      }
+      note.content = content;
       note.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
       await fs.writeFile(fullPath, JSON.stringify(note, null, 2));
       return { success: true, path: notePath, updatedAt: note.updatedAt };
@@ -215,11 +207,13 @@ function createWindow() {
       } else {
         await fs.unlink(fullPath);
       }
+      return { success: true };
     } catch (err) {
       console.error(`Error deleting item at ${itemPath}:`, err);
+      return { success: false, error: err.message };
     }
   });
-  ipcMain.handle("create-folder", async (event, parentPath, folderName) => {
+  ipcMain.handle("fs:create-folder", async (event, parentPath, folderName) => {
     await ensureNotesDirExists();
     folderName = String(folderName || "").replace(/[^a-zA-Z0-9\s-_.]/g, "").trim();
     if (!folderName) {

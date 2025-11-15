@@ -119,8 +119,14 @@ function App() {
       }
     };
 
-    loadContent();
-  }, [selectedNote]);
+    // --- FIX: BUG #4 (Video Bug) ---
+    // Only load content if we're not on a panel that hides the editor
+    if (activePanel !== 'settings' && activePanel !== 'profile') {
+      loadContent();
+    }
+    // --- END FIX ---
+
+  }, [selectedNote, activePanel]); // --- FIX: BUG #4 (Video Bug) --- Add activePanel
 
   // 🎨 Theme + font sync
   // 🎨 Theme sync
@@ -134,11 +140,11 @@ function App() {
     const note = noteToSave || selectedNote;
     if (!note) return;
 
-    // ✅ Always serialize complex content safely
-    const finalContent =
-      typeof contentToSave === 'string'
-        ? contentToSave
-        : JSON.stringify(contentToSave ?? currentNoteContent);
+    // --- FIX: BUG #2 (Save Corruption) ---
+    // Send the raw object/string. DO NOT stringify here.
+    // The backend (main.js) will do the one and only stringify.
+    const finalContent = contentToSave ?? currentNoteContent;
+    // --- END FIX ---
 
     const shouldSave = hasLoadedContent.current || contentToSave !== undefined;
 
@@ -204,11 +210,14 @@ function App() {
       const result = await window.electronAPI.createNote(parentPath, noteName.trim());
       if (result) {
         const noteWithTime = { ...result, createdAt };
+        // --- FIX: BUG #2 (Save Corruption) ---
+        // Send the raw object, not a stringified string
         await window.electronAPI.saveNoteContent({
           id: noteWithTime.id,
           path: noteWithTime.path,
-          content: JSON.stringify({ createdAt }),
+          content: { createdAt }, // Send as object
         });
+        // --- END FIX ---
         await loadNotesList();
         setSelectedNote(noteWithTime);
       }
@@ -231,25 +240,56 @@ function App() {
   };
 
   // --- Deletion ---
+  // --- FIX: BUG #3 (Delete Freeze) ---
+  // Added full try/catch and result checking
   const deleteItem = async (itemToDelete) => {
     if (!itemToDelete) return;
     const confirmDelete = window.confirm(`Delete "${itemToDelete.title}" permanently?`);
     if (!confirmDelete) return;
-    await window.electronAPI.deleteNote(itemToDelete.path, itemToDelete.type);
-    if (selectedNote?.id === itemToDelete.id) setSelectedNote(null);
-    loadNotesList();
+
+    try {
+      const result = await window.electronAPI.deleteNote(itemToDelete.path, itemToDelete.type);
+      if (result?.success) {
+        if (selectedNote?.id === itemToDelete.id) setSelectedNote(null);
+        loadNotesList();
+      } else {
+        alert(`Failed to delete: ${result?.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Delete failed:', err);
+      alert(`Delete failed: ${err.message}`);
+    }
   };
 
   const deleteMultipleItems = async (itemsToDelete) => {
     if (!itemsToDelete?.length) return;
     const confirmDelete = window.confirm(`Delete ${itemsToDelete.length} selected items?`);
     if (!confirmDelete) return;
-    await Promise.all(itemsToDelete.map(item =>
-      window.electronAPI.deleteNote(item.path, item.type)
-    ));
-    if (itemsToDelete.some(i => i.id === selectedNote?.id)) setSelectedNote(null);
-    loadNotesList();
+
+    try {
+      // Run all delete operations, even if some fail
+      const results = await Promise.allSettled(
+        itemsToDelete.map(item =>
+          window.electronAPI.deleteNote(item.path, item.type)
+        )
+      );
+
+      const failed = results.filter(r => r.status === 'rejected' || (r.status === 'fulfilled' && !r.value?.success));
+      if (failed.length > 0) {
+        console.error('Some items failed to delete:', failed);
+        alert(`Failed to delete ${failed.length} items. Please refresh.`);
+      }
+
+      // Reload list whether it partially failed or fully succeeded
+      if (itemsToDelete.some(i => i.id === selectedNote?.id)) setSelectedNote(null);
+      loadNotesList();
+
+    } catch (err) {
+      console.error('Multi-delete failed:', err);
+      alert(`Multi-delete failed: ${err.message}`);
+    }
   };
+  // --- END FIX ---
 
   const updateItemTitle = async (item, newTitle) => {
     if (!newTitle || item.title === newTitle) return;
@@ -342,7 +382,7 @@ function App() {
       {saveStatus && (
         <div
           className={`fixed bottom-6 right-6 px-4 py-2 rounded-2xl shadow-lg text-sm font-semibold backdrop-blur-md transition-all duration-300 
-          ${saveStatus.type === 'success' ? 'bg-green-500/80 text-white' : 'bg-red-500/80 text-white'}`}
+    	 	       ${saveStatus.type === 'success' ? 'bg-green-500/80 text-white' : 'bg-red-500/80 text-white'}`}
         >
           {saveStatus.message}
         </div>

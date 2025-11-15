@@ -180,16 +180,11 @@ function createWindow() {
             const fileData = await fs.readFile(fullPath, 'utf8');
             const note = JSON.parse(fileData);
 
-            // ✅ FIX #1: Always save string content properly
-            if (note.type === 'canvas') {
-                try {
-                    note.content = typeof content === 'string' ? JSON.parse(content) : content;
-                } catch {
-                    note.content = content;
-                }
-            } else {
-                note.content = typeof content === 'string' ? content : JSON.stringify(content);
-            }
+            // --- FIX: BUG #2 (Save Corruption) ---
+            // The frontend now sends the raw object. Just assign it.
+            // The fs.writeFile below will do the *only* stringify.
+            note.content = content;
+            // --- END FIX ---
 
             // ✅ FIX #2: Update metadata and save safely
             note.updatedAt = new Date().toISOString();
@@ -273,14 +268,24 @@ function createWindow() {
             } else {
                 await fs.unlink(fullPath);
             }
+            // --- FIX: BUG #3 (Delete Freeze) ---
+            // Report success back to the frontend
+            return { success: true };
+            // --- END FIX ---
         } catch (err) {
             console.error(`Error deleting item at ${itemPath}:`, err);
+            // --- FIX: BUG #3 (Delete Freeze) ---
+            // Report failure back to the frontend
+            return { success: false, error: err.message };
+            // --- END FIX ---
         }
     });
 
-    // --- FIX: BUG #1 ---
+    // --- FIX: BUG #1 (Folder Creation) ---
     // 7. Create Folder (Handler name fixed)
-    ipcMain.handle('create-folder', async (event, parentPath, folderName) => {
+    // Changed 'create-folder' to 'fs:create-folder' to match preload.js
+    ipcMain.handle('fs:create-folder', async (event, parentPath, folderName) => {
+    // --- END FIX ---
         await ensureNotesDirExists();
 
         folderName = String(folderName || '')
