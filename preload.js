@@ -17,11 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     createNote: (parentPath, noteName) => ipcRenderer.invoke('create-note', parentPath, noteName), // Added parentPath
     deleteNote: (itemPath, type) => ipcRenderer.invoke('delete-note', itemPath, type), // Uses path and type
 
-    createCanvas: (parentPath, canvasName) => ipcRenderer.invoke('create-canvas', parentPath, canvasName),
-    // --- NEW Folder Function (FIXED) ---
-    // 💡 FIX 1: Changed to ipcRenderer.invoke() to enable Promise handling in App.jsx.
-    // 💡 FIX 2: Changed channel name to 'fs:create-folder' to match main.js.
-    createFolder: (parentPath, folderName) => ipcRenderer.invoke('create-folder', parentPath, folderName),
+    createFolder: (parentPath, folderName) => ipcRenderer.invoke('fs:create-folder', parentPath, folderName),
 
     // --- Reminders Functions (Unchanged) ---
     loadReminders: () => ipcRenderer.invoke('load-reminders'),

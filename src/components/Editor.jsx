@@ -5,7 +5,7 @@ import Underline from '@tiptap/extension-underline';
 import TextStyle from '@tiptap/extension-text-style';
 import FontFamily from '@tiptap/extension-font-family';
 
-// --- Toolbar Icons (Unchanged) ---
+// --- Toolbar Icons ---
 const icons = {
   bold: (
     <svg width="1em" height="1em" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -40,22 +40,8 @@ const icons = {
 };
 
 // --- Toolbar ---
-const MenuBar = ({ editor, onSave, onDelete, isNoteSelected, selectedNote }) => {
+const MenuBar = ({ editor, onSave, onDelete, isNoteSelected, lastModified, createdAt }) => {
   if (!editor) return null;
-
-  // --- FIX: Read timestamps directly from the prop ---
-  const createdAt = selectedNote?.createdAt;
-  // Format the 'updatedAt' timestamp nicely, if it exists
-  const lastModified = selectedNote?.updatedAt 
-    ? new Date(selectedNote.updatedAt).toLocaleString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-        day: '2-digit',
-        month: 'short',
-      })
-    : null;
-  // --- END FIX ---
 
   const fontOptions = [
     { label: 'Sans (Default)', value: 'sans-serif' },
@@ -93,6 +79,7 @@ const MenuBar = ({ editor, onSave, onDelete, isNoteSelected, selectedNote }) => 
 
       {/* LEFT — Formatting tools */}
       <div className="flex flex-wrap items-center gap-2">
+        {/* Heading selector */}
         <select
           className={select}
           value={getHeading()}
@@ -108,6 +95,7 @@ const MenuBar = ({ editor, onSave, onDelete, isNoteSelected, selectedNote }) => 
           <option value="H3">Heading 3</option>
         </select>
 
+        {/* Font Family selector */}
         <select
           className={select}
           defaultValue="sans-serif"
@@ -180,13 +168,12 @@ const MenuBar = ({ editor, onSave, onDelete, isNoteSelected, selectedNote }) => 
 
 // --- Editor Component ---
 export function Editor({ content, onChange, onSave, onDelete, isNoteSelected, selectedNote }) {
-  // --- FIX: Removed all local state (useState) ---
-  // const [lastModified, setLastModified] = useState(null); // <-- Removed
-  // const [createdAt, setCreatedAt] = useState(selectedNote?.createdAt || null); // <-- Removed
+  const [lastModified, setLastModified] = useState(null);
+  const [createdAt, setCreatedAt] = useState(selectedNote?.createdAt || null);
 
-  // useEffect(() => { // <-- Removed
-  //   setCreatedAt(selectedNote?.createdAt || null);
-  // }, [selectedNote]);
+  useEffect(() => {
+    setCreatedAt(selectedNote?.createdAt || null);
+  }, [selectedNote]);
 
   const editor = useEditor(
     {
@@ -198,16 +185,20 @@ export function Editor({ content, onChange, onSave, onDelete, isNoteSelected, se
           types: ['textStyle'],
         }),
       ],
-      // This `content` prop is now correct.
-      // Tiptap's hook will update the editor *internally*
-      // whenever this prop changes.
       content: typeof content === 'string' ? content : '',
       editable: isNoteSelected,
       onUpdate: ({ editor }) => {
-        // --- FIX: Only call onChange. Do NOT set local state here. ---
-        // This stops the render loop.
         onChange(editor.getHTML());
-        // setLastModified(...); // <-- Removed
+        setLastModified(
+          new Date().toLocaleString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true,
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+          })
+        );
       },
       editorProps: {
         attributes: {
@@ -216,18 +207,19 @@ export function Editor({ content, onChange, onSave, onDelete, isNoteSelected, se
         },
       },
     },
-    // --- FIX: Re-create the editor when the note ID changes. ---
-    // This is the correct way to load new content in Tiptap
-    // and solves *both* the "blinking" and "stale flash" bugs.
-    [selectedNote?.id]
+    [isNoteSelected]
   );
 
-  // --- FIX: Removed the problematic useEffect hook that caused the blinking ---
-  // useEffect(() => {
-  //   if (editor && ...) {
-  //     editor.commands.setContent(content || '', false);
-  //   }
-  // }, [content, isNoteSelected, editor]);
+  useEffect(() => {
+    if (
+      editor &&
+      isNoteSelected &&
+      typeof content === 'string' &&
+      content !== editor.getHTML()
+    ) {
+      editor.commands.setContent(content || '', false);
+    }
+  }, [content, isNoteSelected, editor]);
 
   return (
     <div className="flex-1 flex flex-col bg-white dark:bg-zinc-900 relative overflow-y-auto">
@@ -237,8 +229,8 @@ export function Editor({ content, onChange, onSave, onDelete, isNoteSelected, se
           onSave={onSave}
           onDelete={onDelete}
           isNoteSelected={isNoteSelected}
-          // --- FIX: Pass the entire selectedNote prop down ---
-          selectedNote={selectedNote}
+          lastModified={lastModified}
+          createdAt={createdAt}
         />
       )}
 

@@ -5,7 +5,6 @@ const icons = {
   folder: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 20h16a2 2 0 002-2V8a2 2 0 00-2-2h-7.92a2 2 0 01-1.41-.58L9.41 3.41a2 2 0 00-1.41-.58H4a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>,
   openFolder: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 20H4a2 2 0 01-2-2V5a2 2 0 012-2h3.92a2 2 0 011.41.58L10.92 7H19a2 2 0 012 2v9a2 2 0 01-2 2z"/></svg>,
   note: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>,
-  canvas: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>,
   trash: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>,
   search: <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
 };
@@ -28,7 +27,6 @@ function NewItemInput({ parentPath, itemType, onCreate, onCancel, depth = 0 }) {
   const config = {
     folder: { icon: icons.folder, color: 'text-yellow-600 dark:text-yellow-500', placeholder: 'New folder name...' },
     note: { icon: icons.note, color: 'text-blue-600 dark:text-blue-400', placeholder: 'New note name...' },
-    canvas: { icon: icons.canvas, color: 'text-purple-600 dark:text-purple-400', placeholder: 'New canvas name...' }
   }[itemType];
 
   const handleCreate = () => {
@@ -68,7 +66,6 @@ function TreeItem({
   onUpdateTitle,
   onCreateFolder,
   onCreateNote,
-  onCreateCanvas,
   onDeleteItem,
   depth = 0,
   checkedIds,
@@ -81,10 +78,9 @@ function TreeItem({
   const [creating, setCreating] = useState(null);
 
   const isSelected = selectedNote?.id === item.id;
-  const isCheckable = item.type === 'note' || item.type === 'canvas';
+  const isCheckable = item.type === 'note';
   const icon =
     item.type === 'folder' ? (isExpanded ? icons.openFolder : icons.folder)
-      : item.type === 'canvas' ? icons.canvas
       : icons.note;
 
   useEffect(() => {
@@ -128,9 +124,7 @@ function TreeItem({
 
         <span className={`p-1 mr-1 ${item.type === 'folder'
             ? 'text-yellow-600 dark:text-yellow-500'
-            : item.type === 'canvas'
-              ? 'text-purple-600 dark:text-purple-400'
-              : 'text-blue-600 dark:text-blue-400'
+            : 'text-blue-600 dark:text-blue-400'
           }`}>
           {icon}
         </span>
@@ -153,7 +147,6 @@ function TreeItem({
           <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
             <button onClick={(e) => { e.stopPropagation(); setCreating('note'); }} className="p-1 hover:text-blue-500">{icons.note}</button>
             <button onClick={(e) => { e.stopPropagation(); setCreating('folder'); }} className="p-1 hover:text-yellow-500">{icons.folder}</button>
-            <button onClick={(e) => { e.stopPropagation(); setCreating('canvas'); }} className="p-1 hover:text-purple-500">{icons.canvas}</button>
             <button onClick={(e) => { e.stopPropagation(); onDeleteItem(item); }} className="p-1 hover:text-red-500">{icons.trash}</button>
           </div>
         )}
@@ -168,7 +161,6 @@ function TreeItem({
               itemType={creating}
               onCreate={
                 creating === 'note' ? onCreateNote :
-                creating === 'canvas' ? onCreateCanvas :
                 onCreateFolder
               }
               onCancel={() => setCreating(null)}
@@ -184,7 +176,6 @@ function TreeItem({
               onUpdateTitle={onUpdateTitle}
               onCreateFolder={onCreateFolder}
               onCreateNote={onCreateNote}
-              onCreateCanvas={onCreateCanvas}
               onDeleteItem={onDeleteItem}
               depth={depth + 1}
               checkedIds={checkedIds}
@@ -220,7 +211,6 @@ export function FileSidebar({
   onItemSelect,
   onCreateNote,
   onCreateFolder,
-  onCreateCanvas,
   onUpdateTitle,
   onDeleteItem,
   onDeleteMultipleItems
@@ -285,9 +275,6 @@ export function FileSidebar({
           <button onClick={() => setCreatingRoot('folder')} className="flex-1 bg-yellow-600 hover:bg-yellow-500 text-white rounded py-2 text-sm font-semibold shadow">
             + Folder
           </button>
-          <button onClick={() => setCreatingRoot('canvas')} className="flex-1 bg-purple-700 hover:bg-purple-600 text-white rounded py-2 text-sm font-semibold shadow">
-            + Canvas
-          </button>
         </div>
       ) : (
         <div className="flex gap-2 mb-4">
@@ -315,7 +302,6 @@ export function FileSidebar({
             itemType={creatingRoot}
             onCreate={
               creatingRoot === 'note' ? onCreateNote :
-              creatingRoot === 'canvas' ? onCreateCanvas :
               onCreateFolder
             }
             onCancel={() => setCreatingRoot(null)}
@@ -330,7 +316,6 @@ export function FileSidebar({
             onUpdateTitle={onUpdateTitle}
             onCreateFolder={onCreateFolder}
             onCreateNote={onCreateNote}
-            onCreateCanvas={onCreateCanvas}
             onDeleteItem={onDeleteItem}
             depth={0}
             checkedIds={checkedIds}
